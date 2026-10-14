@@ -1,0 +1,10 @@
+.DS_Store
+build/
+portlibs/
+dist/
+*.o
+*.d
+*.elf
+*.dol
+*.map
+__pycache__/
