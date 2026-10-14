@@ -9,11 +9,15 @@
 #define STAGE_W 256
 #define STAGE_H 384
 
+enum { VIEW_BOTH, VIEW_BOTTOM, VIEW_TOP };
+
 void stage_init(void);
+void stage_set_view(int view);   /* both screens, or one of them zoomed in */
+int stage_view(void);
 void stage_begin(void);
 void stage_end(void);
 void stage_present(void);           /* scale into the canvas on the CPU (for overlays) */
-const u32 *stage_pixels(void);
+const u32 *stage_pixels(int *rows);
 /* Where the stage sits on the TV canvas */
 void stage_rect(int *x, int *y, int *w, int *h);
 /* TV canvas pixel -> stage coordinates; 1 when inside the stage */

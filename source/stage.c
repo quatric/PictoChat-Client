@@ -34,20 +34,44 @@ static void scale_table(int n, int m, u16 *index, u8 *weight)
     }
 }
 
-void stage_init(void)
+static int view, src_y, src_h;
+
+/* Both screens at 1.25x filling the height, or one screen at 2x. In 4:3 a zoomed
+ * screen sits at the top so the HUD fits underneath; in 16:9 it is centred. */
+void stage_set_view(int v)
 {
-    stage_px = memalign(32, STAGE_W * STAGE_H * 4);
-    memset(stage_px, 0, STAGE_W * STAGE_H * 4);
-    out_h = SH;
-    out_w = STAGE_W * SH / STAGE_H;
+    view = v;
+    src_y = v == VIEW_BOTTOM ? 192 : 0;
+    src_h = v == VIEW_BOTH ? STAGE_H : 192;
+    if (v == VIEW_BOTH) {
+        out_h = SH;
+        out_w = STAGE_W * SH / STAGE_H;
+        out_y = 0;
+    } else {
+        out_w = STAGE_W * 2;
+        out_h = 192 * 2;
+        out_y = SW >= 800 ? (SH - out_h) / 2 : 0;
+    }
     out_x = (SW - out_w) / 2;
-    out_y = 0;
+    free(col_index);
+    free(col_weight);
+    free(row_index);
+    free(row_weight);
     col_index = malloc(out_w * sizeof(u16));
     col_weight = malloc(out_w);
     row_index = malloc(out_h * sizeof(u16));
     row_weight = malloc(out_h);
     scale_table(STAGE_W, out_w, col_index, col_weight);
-    scale_table(STAGE_H, out_h, row_index, row_weight);
+    scale_table(src_h, out_h, row_index, row_weight);
+}
+
+int stage_view(void) { return view; }
+
+void stage_init(void)
+{
+    stage_px = memalign(32, STAGE_W * STAGE_H * 4);
+    memset(stage_px, 0, STAGE_W * STAGE_H * 4);
+    stage_set_view(VIEW_BOTH);
 }
 
 void stage_begin(void)
@@ -73,7 +97,7 @@ void stage_present(void)
 {
     for (int y = 0; y < out_h; y++) {
         int ry = row_index[y], wy = row_weight[y];
-        const u32 *a = stage_px + ry * STAGE_W, *b = a + STAGE_W;
+        const u32 *a = stage_px + (src_y + ry) * STAGE_W, *b = a + STAGE_W;
         u32 *dst = canvas + (out_y + y) * SW + out_x;
         for (int x = 0; x < out_w; x++) {
             int cx = col_index[x], wx = col_weight[x];
@@ -87,7 +111,8 @@ void stage_present(void)
     }
 }
 
-const u32 *stage_pixels(void) { return stage_px; }
+/* the rows the current view shows */
+const u32 *stage_pixels(int *rows) { *rows = src_h; return stage_px + src_y * STAGE_W; }
 
 void stage_rect(int *x, int *y, int *w, int *h)
 {
@@ -100,14 +125,14 @@ void stage_rect(int *x, int *y, int *w, int *h)
 int stage_from_canvas(int px, int py, float *sx, float *sy)
 {
     *sx = (px - out_x + 0.5f) * STAGE_W / out_w;
-    *sy = (py - out_y + 0.5f) * STAGE_H / out_h;
-    return *sx >= 0 && *sy >= 0 && *sx < STAGE_W && *sy < STAGE_H;
+    *sy = src_y + (py - out_y + 0.5f) * src_h / out_h;
+    return *sx >= 0 && *sy >= src_y && *sx < STAGE_W && *sy < src_y + src_h;
 }
 
 void stage_to_canvas(float sx, float sy, int *px, int *py)
 {
     *px = out_x + (int)(sx * out_w / STAGE_W);
-    *py = out_y + (int)(sy * out_h / STAGE_H);
+    *py = out_y + (int)((sy - src_y) * out_h / src_h);
 }
 
 /* ── Sprites ─────────────────────────────────────────────────────────────── */

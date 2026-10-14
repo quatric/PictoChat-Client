@@ -24,7 +24,7 @@ static const btn_t BTNS[] = {
 
 void autotest_push_key(u8 code, char ch);
 
-static void save_shot(const char *name)
+static void save_shot(const char *name, const u32 *px, int SW, int SH)
 {
     mkdir("sd:/shots", 0777);
     char path[128];
@@ -40,7 +40,7 @@ static void save_shot(const char *name)
     unsigned char *line = calloc(row, 1);
     for (int y = SH - 1; y >= 0; y--) {
         for (int x = 0; x < SW; x++) {
-            u32 c = canvas[y * SW + x];
+            u32 c = px[y * SW + x];
             line[x * 3] = c & 255;
             line[x * 3 + 1] = (c >> 8) & 255;
             line[x * 3 + 2] = (c >> 16) & 255;
@@ -56,11 +56,11 @@ static char shot_name[64];
 
 int autotest_shot_pending(void) { return pending_shot; }
 
-/* called after the frame is drawn */
-void autotest_after_draw(void)
+/* called with the frame as it went to the TV */
+void autotest_save(const u32 *px, int w, int h)
 {
     if (pending_shot) {
-        save_shot(shot_name);
+        save_shot(shot_name, px, w, h);
         pending_shot = 0;
     }
 }

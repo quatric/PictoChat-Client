@@ -117,43 +117,6 @@ int gfx_widescreen(void) { return wide; }
 static image_t *pointer_img;
 static int pointer_tried;
 
-#ifdef AUTOTEST /* screenshots need the pointer drawn into the canvas */
-static u32 under[UNDER_MAX * UNDER_MAX];
-static void cursor_draw(int cx, int cy, int save)
-{
-    if (!pointer_tried) {
-        pointer_tried = 1;
-        pointer_img = image_decode(pointer_png, pointer_png_size, 128);
-        if (pointer_img && (pointer_img->w > UNDER_MAX || pointer_img->h > UNDER_MAX)) {
-            image_free(pointer_img);
-            pointer_img = NULL;
-        }
-    }
-    int w = pointer_img ? pointer_img->w : 12, h = pointer_img ? pointer_img->h : 12;
-    int x0 = cx - CURSOR_HOT_X, y0 = cy - CURSOR_HOT_Y;
-    for (int j = 0; j < h; j++) {
-        int y = y0 + j;
-        if (y < 0 || y >= SH) continue;
-        for (int i = 0; i < w; i++) {
-            int x = x0 + i;
-            if (x < 0 || x >= SW) continue;
-            u32 *p = &canvas[y * SW + x];
-            if (save == 1) under[j * UNDER_MAX + i] = *p;
-            else if (save == 2) {
-                *p = under[j * UNDER_MAX + i];
-                continue;
-            }
-            if (!pointer_img) {
-                *p = 0xFFFFFF;
-                continue;
-            }
-            u32 c = pointer_img->px[j * w + i];
-            int a = c >> 24;
-            if (a) *p = gfx_mix(*p, c & 0xFFFFFF, a);
-        }
-    }
-}
-#endif
 
 static inline u16 rgb565(u32 c) { return ((c >> 8) & 0xF800) | ((c >> 5) & 0x07E0) | ((c >> 3) & 0x001F); }
 
@@ -274,12 +237,6 @@ void gfx_layer(const u32 *px, int w, int h, float x, float y, float dw, float dh
 
 void gfx_present(int cursor, int cx, int cy)
 {
-#ifdef AUTOTEST
-    /* screenshots are taken from the canvas, so draw the pointer into it */
-    if (cursor) cursor_draw(cx, cy, 1);
-    { extern void autotest_after_draw(void); autotest_after_draw(); }
-    if (cursor) cursor_draw(cx, cy, 2);
-#endif
     if (canvas_dirty) {
         to_rgb565(canvas, SW, SH, canvas_tex);
         canvas_dirty = 0;
@@ -300,6 +257,35 @@ void gfx_present(int cursor, int cx, int cy)
     GX_SetColorUpdate(GX_TRUE);
     GX_CopyDisp(xfb[which], GX_TRUE);
     GX_Flush();
+#ifdef AUTOTEST
+    {
+        /* screenshots show exactly what goes to the TV */
+        extern int autotest_shot_pending(void);
+        extern void autotest_save(const u32 *px, int w, int h);
+        if (autotest_shot_pending()) {
+            GX_DrawDone();
+            int w = rmode->fbWidth, h = rmode->xfbHeight;
+            u32 *rgb = malloc(w * h * 4);
+            const u32 *yuv = xfb[which];
+            for (int i = 0; rgb && i < w * h / 2; i++) {
+                u32 v = yuv[i];
+                int y1 = v >> 24, cb = (v >> 16) & 255, y2 = (v >> 8) & 255, cr = v & 255;
+                for (int k = 0; k < 2; k++) {
+                    int yy = (k ? y2 : y1) - 16;
+                    int r = (298 * yy + 409 * (cr - 128) + 128) >> 8;
+                    int g = (298 * yy - 100 * (cb - 128) - 208 * (cr - 128) + 128) >> 8;
+                    int bl = (298 * yy + 516 * (cb - 128) + 128) >> 8;
+                    r = r < 0 ? 0 : r > 255 ? 255 : r;
+                    g = g < 0 ? 0 : g > 255 ? 255 : g;
+                    bl = bl < 0 ? 0 : bl > 255 ? 255 : bl;
+                    rgb[i * 2 + k] = r << 16 | g << 8 | bl;
+                }
+            }
+            if (rgb) autotest_save(rgb, w, h);
+            free(rgb);
+        }
+    }
+#endif
     VIDEO_SetNextFramebuffer(xfb[which]);
     VIDEO_Flush();
 }

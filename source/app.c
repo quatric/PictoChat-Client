@@ -54,6 +54,8 @@ static int counts[4];
 static int room_shift, room_shift_target; /* lobby list scroll, 0 or 32 */
 static int room_index = -1;               /* 0..4 while in a room */
 static int left_room = -1;
+static int zoom = VIEW_BOTH;              /* the view chosen with 2, used in the lobby and rooms */
+static int unread;                        /* messages that arrived while the top screen was hidden */
 static int private_room;
 static int fade;                          /* 0..255 */
 static int closed_y;
@@ -72,6 +74,7 @@ static float touch_x, touch_y;
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
 static void draw_side_panels(void);
+static void cycle_zoom(void);
 void ui_spinner_text(int x, int y, int w, int f, const char *text);
 
 static int valid_name_char(int c) { return isalnum(c) || c == '_'; }
@@ -186,6 +189,7 @@ static void handle_events(void)
             }
             break;
         case EV_MESSAGE:
+            if (stage_view() == VIEW_BOTTOM) unread++;
             log_add_message(&ev.msg);
             pc_msg_free(&ev.msg);
             sound_play(SND_RECEIVE);
@@ -414,6 +418,7 @@ static void handle_keyboard(void)
             else if (k.code == KEY_PAGEDOWN) log_scroll(1);
             else if (k.code == KEY_END) log_scroll_end();
             else if (k.code == KEY_TAB) compose_next_keyboard();
+            else if (k.code == KEY_F1) cycle_zoom();
             else if (k.ch && k.ch != '\n' && k.ch != '\t' && k.ch != '\b' && k.ch != 0x1b) {
                 char s[2] = { k.ch, 0 };
                 compose_type(s);
@@ -501,6 +506,7 @@ static void handle_input(const input_t *in)
             chat_disconnect();
             screen = SCR_SETUP;
         }
+        if (in->down & BTN_2) cycle_zoom();
         if (in->pointer && (in->down & (BTN_UP | BTN_DOWN))) {
             room_shift_target = (in->down & BTN_DOWN) ? 32 : 0;
             sound_play(SND_SCROLL);
@@ -519,7 +525,7 @@ static void handle_input(const input_t *in)
             sound_play(SND_CLEAR);
         }
         if (in->down & BTN_1) compose_next_keyboard();
-        if (in->down & BTN_2) compose_renew(log_current());
+        if (in->down & BTN_2) cycle_zoom();
         if (in->pointer && (in->down & BTN_UP)) log_scroll(-1), sound_play(SND_SCROLL);
         if (in->pointer && (in->down & BTN_DOWN)) log_scroll(1), sound_play(SND_SCROLL);
         if (in->pointer && (in->down & BTN_LEFT)) compose_toggle_pen_size();
@@ -743,85 +749,144 @@ static void draw_loading(void)
     gfx_fill(bx, by, bw * p / 100, 10, 0x30BAF3);
 }
 
+/* Control hints: pairs of button and action */
+static const char *const ROOM_HINTS[] = {
+    "A", "Touch / draw", "B", "Backspace", "+", "Send", "-", "Clear", "1", "Keyboard", "2", "Zoom",
+    "Up/Down", "Scroll", "HOME", "Leave",
+};
+static const char *const LOBBY_HINTS[] = { "A", "Select", "2", "Zoom", "B", "Back", "HOME", "Back" };
+static const char *const MENU_HINTS[] = { "A", "Select", "B", "Back", "HOME", "Quit" };
+
+static const char *const *hints_for_screen(int *count)
+{
+    if (screen == SCR_ROOM) { *count = 16; return ROOM_HINTS; }
+    if (screen == SCR_LOBBY) { *count = 8; return LOBBY_HINTS; }
+    *count = 6;
+    return MENU_HINTS;
+}
+
+/* One hint: a white key chip and its action; returns the width used */
+static void draw_hint(int x, int y, int max_w, const char *key, const char *action)
+{
+    int kw = text_width(FONT_BOLD, 13, key) + 12;
+    gfx_round(x, y + 1, kw, 19, 4, 0xFFFFFF);
+    text_draw(FONT_BOLD, 13, x + 6, y - 1, 0x202020, key);
+    text_draw_fit(FONT_BOLD, 13, x + kw + 7, y - 1, max_w - kw - 7, 0xFFFFFF, action);
+}
+
+static int status_height(void)
+{
+    if (screen != SCR_LOBBY && screen != SCR_ROOM && screen != SCR_CLOSED) return 0;
+    return 26 + (screen == SCR_ROOM && room_index >= 0 ? 24 : 0) + (unread && stage_view() == VIEW_BOTTOM ? 28 : 0);
+}
+
+/* Who and where, from (x, y) down; returns the y after it */
+static int draw_status(int x, int y, int w)
+{
+    if (screen != SCR_LOBBY && screen != SCR_ROOM && screen != SCR_CLOSED) return y;
+    gfx_fill(x, y + 5, 12, 12, my_color);
+    gfx_fill(x, y + 5, 12, 1, 0xFFFFFF);
+    text_draw_fit(FONT_BOLD, 15, x + 18, y, w - 18, 0xFFFFFF, my_name);
+    y += 26;
+    if (screen == SCR_ROOM && room_index >= 0) {
+        char r[48];
+        if (private_room) snprintf(r, sizeof r, "Private room");
+        else snprintf(r, sizeof r, "Chat Room %c", 'A' + room_index);
+        text_draw_fit(FONT_BOLD, 15, x, y, w, 0xE0E0E0, r);
+        y += 24;
+    }
+    if (unread && stage_view() == VIEW_BOTTOM) {
+        char n[48];
+        snprintf(n, sizeof n, unread == 1 ? "1 new message" : "%d new messages", unread);
+        gfx_round(x - 4, y + 1, text_width(FONT_BOLD, 14, n) + 8, 22, 4, my_color);
+        text_draw(FONT_BOLD, 14, x, y, 0xFFFFFF, n);
+        y += 28;
+    }
+    return y;
+}
+
 static void draw_side_panels(void)
 {
     int x, y, w, h;
     stage_rect(&x, &y, &w, &h);
-    /* the tiled background is drawn once and copied in every frame */
+    /* the tiled background is drawn once per layout and copied in every frame */
     static u32 *background;
-    if (!background) {
-        background = malloc(SW * SH * 4);
+    static int background_x = -1, background_y = -1;
+    if (!background) background = malloc(SW * SH * 4);
+    if (background_x != x || background_y != y + h || !background) {
         if (img[IMG_BODY_BG]) {
             for (int ty = 0; ty < SH; ty += img[IMG_BODY_BG]->h)
                 for (int tx = 0; tx < SW; tx += img[IMG_BODY_BG]->w) gfx_blit(img[IMG_BODY_BG], tx, ty);
         } else {
             gfx_fill(0, 0, SW, SH, 0xD8D8D8);
         }
-        gfx_fill(x - 1, 0, 1, SH, 0x000000);
-        gfx_fill(x + w, 0, 1, SH, 0x000000);
+        gfx_fill(x - 1, y, 1, h, 0x000000);
+        gfx_fill(x + w, y, 1, h, 0x000000);
+        if (y > 0) gfx_fill(x - 1, y - 1, w + 2, 1, 0x000000);
+        if (y + h < SH) gfx_fill(x - 1, y + h, w + 2, 1, 0x000000);
         if (background) memcpy(background, canvas, SW * SH * 4);
+        background_x = x;
+        background_y = y + h;
     } else {
         memcpy(canvas, background, SW * SH * 4);
     }
 
-    /* the side panels sit on a dark overlay so the text stands out from the stripes */
+    int count;
+    const char *const *hints = hints_for_screen(&count);
     int left = x - 16, right = SW - (x + w) - 16;
-    if (left < 110) return;
-    int pw = left - 20;
 
-    /* left: who and where */
-    int lh = 62;
-    if (screen == SCR_LOBBY || screen == SCR_ROOM || screen == SCR_CLOSED) lh += 30;
-    if (screen == SCR_ROOM && room_index >= 0) lh += private_room ? 26 + 3 * 20 : 26;
-    gfx_fill_alpha(8, 16, left, lh, 0x000000, 175);
-    int ly = 26;
-    text_draw(FONT_BOLD, 18, 18, ly, 0xFFFFFF, "PictoChat");
-    ly += 34;
-    if (screen == SCR_LOBBY || screen == SCR_ROOM || screen == SCR_CLOSED) {
-        gfx_fill(18, ly + 5, 12, 12, my_color);
-        gfx_fill(18, ly + 5, 12, 1, 0xFFFFFF);
-        text_draw_fit(FONT_BOLD, 15, 36, ly, pw - 18, 0xFFFFFF, my_name);
-        ly += 30;
-        if (screen == SCR_ROOM && room_index >= 0) {
-            char r[48];
-            if (private_room) snprintf(r, sizeof r, "Private room");
-            else snprintf(r, sizeof r, "Chat Room %c", 'A' + room_index);
-            text_draw_fit(FONT_BOLD, 15, 18, ly, pw, 0xE0E0E0, r);
-            ly += 26;
-            if (private_room) {
-                int starts[3], lens[3];
-                const char *t = "Send !join and a code to go to another private room.";
-                int n = text_wrap(FONT_BOLD, 13, t, pw, starts, lens, 3);
-                for (int i = 0; i < n; i++) text_draw_n(FONT_BOLD, 13, 18, ly + i * 20, 0xC8C8C8, t + starts[i], lens[i]);
+    if (left < 110) {
+        /* no room at the sides (a zoomed screen in 4:3): one bar underneath */
+        int by = y + h + 6, bh = SH - by - 6;
+        if (bh < 40) return;
+        gfx_fill_alpha(6, by, SW - 12, bh, 0x000000, 175);
+        int col = 136;
+        draw_status(16, by + 8, col - 20);
+        /* hints flow left to right at their own widths */
+        int gx = 16 + col, hx = gx, hy = by + 8;
+        for (int i = 0; i < count; i += 2) {
+            int hw = text_width(FONT_BOLD, 13, hints[i]) + 12 + 7 + text_width(FONT_BOLD, 13, hints[i + 1]);
+            if (hx + hw > SW - 14 && hx > gx) {
+                hx = gx;
+                hy += 26;
             }
+            draw_hint(hx, hy, hw, hints[i], hints[i + 1]);
+            hx += hw + 14;
         }
+        return;
     }
 
-    /* right: controls */
-    static const char *const ROOM_HINTS[] = {
-        "A", "Touch / draw", "B", "Backspace", "+", "Send", "-", "Clear", "1", "Keyboard", "2", "Renew",
-        "Up/Down", "Scroll", "HOME", "Leave room",
-    };
-    static const char *const MENU_HINTS[] = { "A", "Select", "B", "Back", "HOME", "Quit" };
-    const char *const *hints = screen == SCR_ROOM ? ROOM_HINTS : MENU_HINTS;
-    int count = screen == SCR_ROOM ? 16 : 6;
-    int rx = x + w + 8, ry = 26;
-    gfx_fill_alpha(rx, 16, right, 62 + count / 2 * 26, 0x000000, 175);
+    /* the side panels sit on a dark overlay so the text stands out from the stripes */
+    int pw = left - 20, top = y > 16 ? y : 16;
+    gfx_fill_alpha(8, top, left, 52 + status_height(), 0x000000, 175);
+    text_draw(FONT_BOLD, 18, 18, top + 10, 0xFFFFFF, "PictoChat");
+    draw_status(18, top + 44, pw);
+
+    int rx = x + w + 8;
+    gfx_fill_alpha(rx, top, right, 62 + count / 2 * 26, 0x000000, 175);
     rx += 10;
     pw = right - 20;
-    text_draw(FONT_BOLD, 18, rx, ry, 0xFFFFFF, "Controls");
-    ry += 36;
-    for (int i = 0; i < count; i += 2) {
-        int kw = text_width(FONT_BOLD, 13, hints[i]) + 12;
-        gfx_round(rx, ry + 1, kw, 19, 4, 0xFFFFFF);
-        text_draw(FONT_BOLD, 13, rx + 6, ry - 1, 0x202020, hints[i]);
-        text_draw_fit(FONT_BOLD, 13, rx + kw + 7, ry - 1, pw - kw - 7, 0xFFFFFF, hints[i + 1]);
-        ry += 26;
-    }
+    text_draw(FONT_BOLD, 18, rx, top + 10, 0xFFFFFF, "Controls");
+    for (int i = 0; i < count; i += 2) draw_hint(rx, top + 46 + i / 2 * 26, pw, hints[i], hints[i + 1]);
+}
+
+static void cycle_zoom(void)
+{
+    zoom = zoom == VIEW_BOTH ? VIEW_BOTTOM : zoom == VIEW_BOTTOM ? VIEW_TOP : VIEW_BOTH;
+    sound_play(SND_SCROLL);
+}
+
+/* Zooming applies in the lobby and rooms; everything else shows both screens */
+static void apply_view(void)
+{
+    int want = screen == SCR_LOBBY || screen == SCR_ROOM || screen == SCR_CLOSED ? zoom : VIEW_BOTH;
+    if (stage_view() != want) stage_set_view(want);
+    if (want != VIEW_BOTTOM) unread = 0;
 }
 
 static void draw(void)
 {
+    apply_view();
     static int last_screen = -1;
     if (screen != last_screen) TLOG("screen %d", screen), last_screen = screen;
 #ifdef AUTOTEST
@@ -861,13 +926,10 @@ static void draw(void)
      * The stage is scaled by the GPU on top of it. */
     int overlay = screen == SCR_PAIR || screen == SCR_CONNECTING;
     char key[96];
-    snprintf(key, sizeof key, "%d %s %06x %d %d", screen, my_name, (unsigned)my_color, room_index, private_room);
+    snprintf(key, sizeof key, "%d %s %06x %d %d %d %d", screen, my_name, (unsigned)my_color, room_index, private_room,
+             stage_view(), unread);
     static char last_key[96];
     int cpu_stage = overlay;
-#ifdef AUTOTEST
-    extern int autotest_shot_pending(void);
-    if (autotest_shot_pending()) cpu_stage = 1;
-#endif
     if (cpu_stage || strcmp(key, last_key)) {
         snprintf(last_key, sizeof last_key, "%s", cpu_stage ? "" : key);
         draw_side_panels();
@@ -881,7 +943,9 @@ static void draw(void)
     } else {
         int x, y, w, h;
         stage_rect(&x, &y, &w, &h);
-        gfx_layer(stage_pixels(), STAGE_W, STAGE_H, x, y, w, h);
+        int rows;
+        const u32 *px = stage_pixels(&rows);
+        gfx_layer(px, STAGE_W, rows, x, y, w, h);
     }
 #ifdef AUTOTEST
     u64 t1 = gettime();
