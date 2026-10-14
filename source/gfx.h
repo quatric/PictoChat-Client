@@ -20,7 +20,7 @@ void gfx_present(int cursor, int cx, int cy);
 /* Call after drawing into the canvas: it is only re-uploaded to the GPU when it changed */
 void gfx_canvas_changed(void);
 /* A second picture shown over the canvas this frame (w, h multiples of 2), scaled by the GPU; NULL for none */
-void gfx_layer(const u32 *px, int w, int h, float x, float y, float dw, float dh);
+void gfx_layer(const u32 *px, int w, int h, float x, float y, float dw, float dh, int invert);
 
 /* gfx_clip pushes a clip rectangle (nested inside the current one); gfx_noclip pops it */
 void gfx_clip(int x, int y, int w, int h);

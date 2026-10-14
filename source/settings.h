@@ -9,6 +9,7 @@ typedef struct {
     char pair[128];     /* captcha pairing (pictocard.net) */
     int captcha;        /* 0 for self-hosted servers without a captcha */
     int volume;         /* 0..100 */
+    int dark;           /* pict.chat's dark mode */
 } settings_t;
 
 extern settings_t settings;

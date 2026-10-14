@@ -138,13 +138,13 @@ static void to_rgb565(const u32 *src, int w, int h, u16 *dst)
 }
 
 /* The same at twice the size: each 4x4 tile holds 2x2 source pixels */
-static void to_rgb565_2x(const u32 *src, int w, int h, u16 *dst)
+static void to_rgb565_2x(const u32 *src, int w, int h, u16 *dst, u16 inv)
 {
     u16 *out = dst;
     for (int sy = 0; sy < h; sy += 2)
         for (int sx = 0; sx < w; sx += 2) {
             const u32 *p = src + sy * w + sx;
-            u16 a = rgb565(p[0]), b = rgb565(p[1]), c = rgb565(p[w]), d = rgb565(p[w + 1]);
+            u16 a = rgb565(p[0]) ^ inv, b = rgb565(p[1]) ^ inv, c = rgb565(p[w]) ^ inv, d = rgb565(p[w + 1]) ^ inv;
             out[0] = out[1] = out[4] = out[5] = a;
             out[2] = out[3] = out[6] = out[7] = b;
             out[8] = out[9] = out[12] = out[13] = c;
@@ -213,7 +213,7 @@ static void pointer_texture(void)
 
 void gfx_canvas_changed(void) { canvas_dirty = 1; }
 
-void gfx_layer(const u32 *px, int w, int h, float x, float y, float dw, float dh)
+void gfx_layer(const u32 *px, int w, int h, float x, float y, float dw, float dh, int invert)
 {
     if (!px) {
         layer_on = 0;
@@ -227,7 +227,7 @@ void gfx_layer(const u32 *px, int w, int h, float x, float y, float dw, float dh
     }
     /* doubled with nearest, then scaled down by GX with linear filtering:
      * sharp pixels without the uneven widths of plain nearest scaling */
-    to_rgb565_2x(px, w, h, layer_tex);
+    to_rgb565_2x(px, w, h, layer_tex, invert ? 0xFFFF : 0);
     layer_on = 1;
     layer_x = x;
     layer_y = y;

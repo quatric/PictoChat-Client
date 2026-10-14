@@ -152,7 +152,9 @@ void log_draw(void)
         item_t *it = &items[i];
         if (y + it->h >= 0 && y < 192) {
             if (it->image >= 0) {
+                stage_flip(0);   /* pict.chat makes these with new PIXI.Sprite, so no hue flip */
                 stage_blit(img[it->image], BOX_X, y, 0xFFFFFF, 255);
+                stage_flip(1);
                 if (it->name[0]) ds_text(BOX_X + it->text_x, y + 4, 0xD3CBC3, it->name);
             } else {
                 msg_draw(&it->msg, BOX_X, y);
@@ -186,7 +188,7 @@ void ops_draw(const pc_op *ops, int n, int ox, int oy, int clip_lines)
         }
         switch (ops[i].type) {
         case OP_LINE: {
-            u32 color = mode == 1 ? 0xFBFBFB : mode == 2 ? rainbow(deg) : 0x000000;
+            u32 color = mode == 1 ? 0xFBFBFB : mode == 2 ? dk(rainbow(deg)) : 0x000000;
             if (mode == 2) deg = (deg + 12) % 360;
             int w = width + (mode == 1 && width == 2);
             if (have) stage_line(px + ox, py + oy, x + ox, y + oy, w, color);
@@ -213,10 +215,12 @@ void ops_draw(const pc_op *ops, int n, int ox, int oy, int clip_lines)
 void msg_draw(const pc_msg *m, int x, int y)
 {
     int lines = m->lines;
+    stage_flip(0);
     stage_blit(img[IMG_BOX_BG1 + lines - 1], x, y, 0xFFFFFF, 255);
-    stage_blit(img[IMG_BOX_LINES1 + lines - 1], x, y, brighten(m->color, 75), 255);
-    stage_blit(img[IMG_BOX_OUTLINE1 + lines - 1], x, y, m->color, 255);
-    ds_text(x + 6, y + 4, m->color, m->name);
+    stage_blit(img[IMG_BOX_LINES1 + lines - 1], x, y, dk(brighten(m->color, 75)), 255);
+    stage_blit(img[IMG_BOX_OUTLINE1 + lines - 1], x, y, dk(m->color), 255);
+    stage_flip(1);
+    ds_text(x + 6, y + 4, dk(m->color), m->name);
 
     /* contents use pict.chat's stage coordinates, relative to the compose box */
     int ox = x - BOX_X, oy = y - INPUT_Y;

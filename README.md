@@ -23,7 +23,7 @@ The Wii Remote pointer is the stylus: point and hold **A** to draw, or tap keys,
 | B | Backspace | Back |
 | + | Send | Join |
 | − | Clear | |
-| 1 | Next keyboard (accents, kana, symbols, emoji) | |
+| 1 | Next keyboard (accents, kana, symbols, emoji) | Dark Mode (on the first screen) |
 | 2 | Zoom: both screens, the bottom screen, the top screen | Zoom (in the room list) |
 | Up / Down | Scroll the messages | Scroll the room list |
 | Left / Right | Pen size / pen, rainbow pen, eraser | |
@@ -37,7 +37,7 @@ In private rooms (Chat Room E), send `!join` followed by a room code to move to 
 
 ## Settings
 
-`apps/PictoChat/settings.txt` remembers your name, colour and the sound volume (`volume=0`..`100`). To use another PictoChat Online server, for example a self-hosted [ayunpictojava](https://github.com/ayunami2000/ayunpictojava):
+`apps/PictoChat/settings.txt` remembers your name, colour, Dark Mode (`dark=1`, the same as pict.chat's) and the sound volume (`volume=0`..`100`). To use another PictoChat Online server, for example a self-hosted [ayunpictojava](https://github.com/ayunami2000/ayunpictojava):
 
 ```
 chat=ws://192.168.1.10:8080/

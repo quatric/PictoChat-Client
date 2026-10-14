@@ -43,6 +43,7 @@ void settings_load(const char *argv0)
         else if (!strcmp(line, "pair") && *v) snprintf(settings.pair, sizeof settings.pair, "%s", v);
         else if (!strcmp(line, "captcha")) settings.captcha = atoi(v) != 0;
         else if (!strcmp(line, "volume")) settings.volume = atoi(v);
+        else if (!strcmp(line, "dark")) settings.dark = atoi(v) != 0;
     }
     fclose(f);
     trim_slash(settings.site);
@@ -62,5 +63,6 @@ void settings_save(void)
     if (strcmp(settings.site, DEFAULT_SITE)) fprintf(f, "site=%s\n", settings.site);
     if (strcmp(settings.pair, DEFAULT_PAIR)) fprintf(f, "pair=%s\n", settings.pair);
     if (!settings.captcha) fprintf(f, "captcha=0\n");
+    if (settings.dark) fprintf(f, "dark=1\n");
     fclose(f);
 }

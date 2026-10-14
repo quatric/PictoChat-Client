@@ -228,7 +228,16 @@ static void leave_room(void)
 #define NAME_BOX_X 20
 #define NAME_BOX_Y 222
 #define SWATCH_Y 262
-#define JOIN_Y 316
+#define DARK_Y 298
+#define JOIN_Y 322
+
+static void toggle_dark(void)
+{
+    settings.dark = !settings.dark;
+    stage_set_dark(settings.dark);
+    settings_save();
+    sound_play(SND_PEN);
+}
 
 static void setup_touch(int phase, float x, float y)
 {
@@ -247,6 +256,10 @@ static void setup_touch(int phase, float x, float y)
             sound_play(SND_PEN);
             return;
         }
+    }
+    if (in_rect(x, y, 16, DARK_Y - 3, 100, 18)) {
+        toggle_dark();
+        return;
     }
     if (in_rect(x, y, 64, JOIN_Y, 128, 26)) {
         if (!settings.name[0]) {
@@ -486,6 +499,7 @@ static void handle_input(const input_t *in)
     switch (screen) {
     case SCR_SETUP:
         if (in->down & BTN_PLUS) setup_touch(TOUCH_UP, 70, JOIN_Y + 5);
+        if (in->down & BTN_1) toggle_dark();
         if (in->down & BTN_HOME) quit = 1;
         break;
     case SCR_NAME:
@@ -551,15 +565,18 @@ static void draw_top_screen(void)
 
 static void draw_setup(void)
 {
+    /* the intro is pict.chat's HTML page: inverted, but not hue-flipped */
+    stage_flip(0);
     stage_blit(img[IMG_INTRO_BG], 0, 0, 0xFFFFFF, 255);
     if (img[IMG_LOGO]) stage_blit(img[IMG_LOGO], (STAGE_W - img[IMG_LOGO]->w) / 2, 22, 0xFFFFFF, 255);
+    stage_flip(1);
     center(76, 0x000000, "PictoChat Online for Wii");
     center(100, 0x404040, "Public rooms are public and logged.");
     center(114, 0x404040, "Flagged messages go to moderators.");
     center(128, 0x404040, "Don't share private info. Be kind!");
     center(162, 0x707070, "pict.chat by ayunami2000");
 
-    u32 c = settings.color;
+    u32 c = dk(settings.color);
     ds_text(NAME_BOX_X, NAME_BOX_Y - 14, 0x000000, "Username:");
     gfx_fill(NAME_BOX_X, NAME_BOX_Y, 216, 18, c);
     gfx_fill(NAME_BOX_X + 1, NAME_BOX_Y + 1, 214, 16, 0xFBFBFB);
@@ -568,22 +585,28 @@ static void draw_setup(void)
     ds_text(20, SWATCH_Y - 14, 0x000000, "Color:");
     for (int i = 0; i < 16; i++) {
         int sx = 20 + (i % 8) * 27, sy = SWATCH_Y + (i / 8) * 17;
-        if (SWATCHES[i] == c) gfx_fill(sx - 2, sy - 2, 28, 18, 0x000000);
-        gfx_fill(sx, sy, 24, 14, SWATCHES[i]);
+        if (SWATCHES[i] == settings.color) gfx_fill(sx - 2, sy - 2, 28, 18, 0x000000);
+        gfx_fill(sx, sy, 24, 14, dk(SWATCHES[i]));
     }
+    gfx_fill(20, DARK_Y, 11, 11, 0x000000);
+    gfx_fill(21, DARK_Y + 1, 9, 9, 0xFBFBFB);
+    if (settings.dark) gfx_fill(23, DARK_Y + 3, 5, 5, 0x000000);
+    ds_text(36, DARK_Y, 0x000000, "Dark Mode");
     button(64, JOIN_Y, 128, 26, "Join PictoChat", c, touching && in_rect(touch_x, touch_y, 64, JOIN_Y, 128, 26));
     if (status[0]) {
         int starts[3], lens[3];
         int n = text_wrap(FONT_DS, 10, status, 230, starts, lens, 3);
-        for (int i = 0; i < n; i++) ds_text_n(13, 348 + i * 12, 0xC00000, status + starts[i], lens[i]);
+        for (int i = 0; i < n; i++) ds_text_n(13, 352 + i * 12, 0xC00000, status + starts[i], lens[i]);
     }
 }
 
 static void draw_name(void)
 {
+    stage_flip(0);
     stage_blit(img[IMG_INTRO_BG], 0, 0, 0xFFFFFF, 255);
+    stage_flip(1);
     center(70, 0x000000, "Type your name:");
-    u32 c = settings.color;
+    u32 c = dk(settings.color);
     gfx_fill(48, 88, 160, 22, c);
     gfx_fill(49, 89, 158, 20, 0xFBFBFB);
     int w = ds_width(name_edit);
@@ -614,7 +637,7 @@ static void draw_lobby(void)
         }
     }
     stage_blit(img[IMG_CHOOSE], 0, 192, 0xFFFFFF, a);
-    stage_blit(img[IMG_CHOOSE_MASK], 0, 192, my_color, a);
+    stage_blit(img[IMG_CHOOSE_MASK], 0, 192, dk(my_color), a);
     if (img[IMG_SCROLL]) {
         /* the arrow flips once the list has scrolled */
         image_t *s = img[IMG_SCROLL];
@@ -756,11 +779,13 @@ static const char *const ROOM_HINTS[] = {
 };
 static const char *const LOBBY_HINTS[] = { "A", "Select", "2", "Zoom", "B", "Back", "HOME", "Back" };
 static const char *const MENU_HINTS[] = { "A", "Select", "B", "Back", "HOME", "Quit" };
+static const char *const SETUP_HINTS[] = { "A", "Select", "+", "Join", "1", "Dark Mode", "HOME", "Quit" };
 
 static const char *const *hints_for_screen(int *count)
 {
     if (screen == SCR_ROOM) { *count = 16; return ROOM_HINTS; }
     if (screen == SCR_LOBBY) { *count = 8; return LOBBY_HINTS; }
+    if (screen == SCR_SETUP) { *count = 8; return SETUP_HINTS; }
     *count = 6;
     return MENU_HINTS;
 }
@@ -902,7 +927,7 @@ static void draw(void)
     if (screen == SCR_LOADING) {
         draw_loading();
         gfx_canvas_changed();
-        gfx_layer(NULL, 0, 0, 0, 0, 0, 0);
+        gfx_layer(NULL, 0, 0, 0, 0, 0, 0, 0);
         gfx_present(0, 0, 0);
         return;
     }
@@ -926,8 +951,8 @@ static void draw(void)
      * The stage is scaled by the GPU on top of it. */
     int overlay = screen == SCR_PAIR || screen == SCR_CONNECTING;
     char key[96];
-    snprintf(key, sizeof key, "%d %s %06x %d %d %d %d", screen, my_name, (unsigned)my_color, room_index, private_room,
-             stage_view(), unread);
+    snprintf(key, sizeof key, "%d %s %06x %d %d %d %d %d", screen, my_name, (unsigned)my_color, room_index, private_room,
+             stage_view(), unread, stage_dark());
     static char last_key[96];
     int cpu_stage = overlay;
     if (cpu_stage || strcmp(key, last_key)) {
@@ -939,13 +964,13 @@ static void draw(void)
         gfx_canvas_changed();
     }
     if (cpu_stage) {
-        gfx_layer(NULL, 0, 0, 0, 0, 0, 0);
+        gfx_layer(NULL, 0, 0, 0, 0, 0, 0, 0);
     } else {
         int x, y, w, h;
         stage_rect(&x, &y, &w, &h);
         int rows;
         const u32 *px = stage_pixels(&rows);
-        gfx_layer(px, STAGE_W, rows, x, y, w, h);
+        gfx_layer(px, STAGE_W, rows, x, y, w, h, stage_dark());
     }
 #ifdef AUTOTEST
     u64 t1 = gettime();
@@ -1025,6 +1050,7 @@ void app_run(void)
     sanitize_name(settings.name);
     TLOG("app start %dx%d", SW, SH);
     stage_init();
+    stage_set_dark(settings.dark);
     sound_volume(settings.volume * 255 / 100);
     input_t in;
     while (!quit) {

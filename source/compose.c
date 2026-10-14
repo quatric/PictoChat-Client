@@ -565,34 +565,36 @@ static void highlight(const rect_t *r, u32 c, int alpha)
 
 void compose_draw(int alpha)
 {
+    u32 tint = dk(color);
     stage_blit(img[IMG_DRAWUI], 0, 192, 0xFFFFFF, alpha);
     static const int OVERLAY[7] = { -1, IMG_SHIFT, IMG_CAPS, IMG_ACCENTS, IMG_JAPANESE, IMG_SYMBOLS, IMG_EMOJIS };
     int overlay = kb_mode == 4 && jp_mode ? IMG_JAPANESE2 : OVERLAY[kb_mode];
     if (overlay >= 0) stage_blit(img[overlay], 0, 192, 0xFFFFFF, alpha);
 
     stage_blit(img[IMG_BOX_BG5], 21, 207, 0xFFFFFF, alpha);
-    stage_blit(img[IMG_BOX_OUTLINE5], 21, 207, color, alpha);
+    stage_blit(img[IMG_BOX_OUTLINE5], 21, 207, tint, alpha);
     if (alpha >= 255) {
         gfx_clip(21, 207, 234, 85);
         ops_draw(ops, nops, 0, 0, 5);
         gfx_noclip();
     }
-    stage_blit_multiply(img[IMG_BOX_LINES], 21, 207, brighten(color, 75), alpha);
+    /* in dark mode pict.chat's lines come out grey: the multiplied sprite loses its tint */
+    stage_blit_multiply(img[IMG_BOX_LINES], 21, 207, stage_dark() ? 0x303030 : brighten(color, 75), alpha);
     if (alpha < 255) return;
 
-    ds_text(27, 211, color, name);
+    ds_text(27, 211, tint, name);
     for (int i = 0; i < ntb; i++) ds_text((int)tbs[i].x, (int)tbs[i].y, 0x000000, tbs[i].text);
     if (selected < ntb && (frame / 30) % 2 == 0) {
         tb_t *t = &tbs[selected];
-        gfx_fill((int)t->x + ds_width(t->text), (int)t->y + 1, 1, 10, color);
+        gfx_fill((int)t->x + ds_width(t->text), (int)t->y + 1, 1, 10, tint);
     }
 
-    u32 mode_tint = rainbow_pen ? rainbow(rainbow_deg) : color;
-    gfx_fill_alpha(2, big_pen ? 263 : 278, 14, 14, color, 128);
+    u32 mode_tint = rainbow_pen ? dk(rainbow(rainbow_deg)) : tint;
+    gfx_fill_alpha(2, big_pen ? 263 : 278, 14, 14, tint, 128);
     gfx_fill_alpha(2, eraser ? 244 : 230, 14, 13, mode_tint, 128);
-    gfx_fill_alpha(2, 299 + 17 * (kb_mode > 2 ? kb_mode - 2 : 0), 14, 14, color, 128);
+    gfx_fill_alpha(2, 299 + 17 * (kb_mode > 2 ? kb_mode - 2 : 0), 14, 14, tint, 128);
 
-    if (hit == HIT_TOOL) highlight(&TOOLS[hit_index], color, 102);
-    else if (hit == HIT_KEY && !dragging) highlight(key_rect(hit_index), color, 102);
+    if (hit == HIT_TOOL) highlight(&TOOLS[hit_index], tint, 102);
+    else if (hit == HIT_KEY && !dragging) highlight(key_rect(hit_index), tint, 102);
     if (dragging) ds_text((int)drag_x - 10, (int)drag_y - 10, 0x000000, drag_text);
 }

@@ -35,6 +35,25 @@ static void scale_table(int n, int m, u16 *index, u8 *weight)
 }
 
 static int view, src_y, src_h;
+int stage_dark_on;
+static int flip;
+
+void stage_set_dark(int on) { stage_dark_on = on; }
+int stage_dark(void) { return stage_dark_on; }
+void stage_flip(int on) { flip = on; }
+
+/* PIXI's ColorMatrixFilter.hue(180): every channel becomes 2/3 of the sum minus itself */
+static inline u32 hue_flip(u32 c)
+{
+    int r = R(c), g = G(c), b = B(c), s = (r + g + b) * 2 / 3;
+    r = s - r;
+    g = s - g;
+    b = s - b;
+    r = r < 0 ? 0 : r > 255 ? 255 : r;
+    g = g < 0 ? 0 : g > 255 ? 255 : g;
+    b = b < 0 ? 0 : b > 255 ? 255 : b;
+    return r << 16 | g << 8 | b;
+}
 
 /* Both screens at 1.25x filling the height, or one screen at 2x. In 4:3 a zoomed
  * screen sits at the top so the HUD fits underneath; in 16:9 it is centred. */
@@ -82,6 +101,7 @@ void stage_begin(void)
     canvas = stage_px;
     SW = STAGE_W;
     SH = STAGE_H;
+    flip = 1;
     gfx_noclip();
 }
 
@@ -106,7 +126,7 @@ void stage_present(void)
                 u32 bottom = wx ? gfx_mix(b[cx], b[cx + 1], wx) : b[cx];
                 top = gfx_mix(top, bottom, wy);
             }
-            dst[x] = top;
+            dst[x] = stage_dark_on ? top ^ 0xFFFFFF : top;
         }
     }
 }
@@ -157,7 +177,8 @@ void stage_blit_region(const image_t *img, int sx, int sy, int w, int h, int x, 
             u32 c = src[ix];
             int a = (c >> 24) * alpha / 255;
             if (!a) continue;
-            u32 p = tint_px(c, tint);
+            /* the hue flip comes before the tint, as PIXI does it */
+            u32 p = tint_px(flip && stage_dark_on ? hue_flip(c) : c, tint);
             row[xx] = a >= 255 ? p : gfx_mix(row[xx], p, a);
         }
     }
@@ -182,7 +203,7 @@ void stage_blit_multiply(const image_t *img, int x, int y, u32 tint, int alpha)
             u32 c = src[i];
             int a = (c >> 24) * alpha / 255;
             if (!a) continue;
-            u32 s = tint_px(c, tint), d = row[xx];
+            u32 s = tint_px(flip && stage_dark_on ? hue_flip(c) : c, tint), d = row[xx];
             u32 m = ((R(s) * R(d) / 255) << 16) | ((G(s) * G(d) / 255) << 8) | (B(s) * B(d) / 255);
             row[xx] = gfx_mix(d, m, a);
         }

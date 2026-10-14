@@ -30,5 +30,13 @@ void stage_blit_region(const image_t *img, int sx, int sy, int w, int h, int x, 
 void stage_blit_multiply(const image_t *img, int x, int y, u32 tint, int alpha);
 void stage_line(float x0, float y0, float x1, float y1, int width, u32 color);
 
+/* pict.chat's dark mode: the page is inverted, and sprites it loads with
+ * PIXI.Sprite.from get their hue turned 180 degrees first so they keep their
+ * colours. Colours pict.chat passes through darkIt() go through dk(). */
+void stage_set_dark(int on);
+int stage_dark(void);
+void stage_flip(int on);          /* hue-flip the sprites drawn from now on */
+static inline u32 dk(u32 c) { extern int stage_dark_on; return stage_dark_on ? c ^ 0xFFFFFF : c; }
+
 u32 brighten(u32 color, int percent);   /* pict.chat's increase_brightness */
 u32 rainbow(int degrees);                /* hsl(deg, 100%, 50%) */
