@@ -53,7 +53,7 @@ static int counts[4];
 static int room_shift, room_shift_target; /* lobby list scroll, 0 or 32 */
 static int room_index = -1;               /* 0..4 while in a room */
 static int left_room = -1;
-static int zoom = VIEW_BOTH;              /* the view chosen with 2, used in the lobby and rooms */
+static int layout = VIEW_BOTH;            /* the screen layout chosen with X / 2 */
 static int unread;                        /* messages that arrived while the top screen was hidden */
 static int private_room;
 static int fade;                          /* 0..255 */
@@ -67,13 +67,13 @@ static int name_shift;
 
 /* pointer and touch */
 static int cur_x, cur_y, cursor_visible, virtual_cursor;
-static int touching;
+static int touching, touch_pane, touch_screen;
 static float touch_x, touch_y;
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
-static void draw_side_panels(void);
-static void cycle_zoom(void);
+static void draw_side_panels(int which);
+static void cycle_layout(void);
 void ui_spinner_text(int x, int y, int w, int f, const char *text);
 
 static int valid_name_char(int c) { return isalnum(c) || c == '_'; }
@@ -430,7 +430,7 @@ static void handle_keyboard(void)
             else if (k.code == KEY_PAGEDOWN) log_scroll(1);
             else if (k.code == KEY_END) log_scroll_end();
             else if (k.code == KEY_TAB) compose_next_keyboard();
-            else if (k.code == KEY_F1) cycle_zoom();
+            else if (k.code == KEY_F1) cycle_layout();
             else if (k.ch && k.ch != '\n' && k.ch != '\t' && k.ch != '\b' && k.ch != 0x1b) {
                 char s[2] = { k.ch, 0 };
                 compose_type(s);
@@ -479,14 +479,17 @@ static void handle_input(const input_t *in)
         virtual_cursor = 0;
     }
 
+    /* a finger on the GamePad goes through the GamePad's layout, a pointer through the TV's */
     float sx, sy;
-    stage_from_canvas(cur_x, cur_y, &sx, &sy);
     if ((in->down & BTN_A) && (cursor_visible || in->touch)) {
+        touch_screen = in->touch ? SCREEN_GAMEPAD : SCREEN_TV;
+        touch_pane = stage_from_screen(touch_screen, cur_x, cur_y, -1, &sx, &sy);
         touching = 1;
         touch_x = sx;
         touch_y = sy;
         touch(TOUCH_DOWN, sx, sy);
     } else if (touching && (in->held & BTN_A)) {
+        stage_from_screen(touch_screen, cur_x, cur_y, touch_pane, &sx, &sy);
         touch_x = sx;
         touch_y = sy;
         touch(TOUCH_HELD, sx, sy);
@@ -500,15 +503,18 @@ static void handle_input(const input_t *in)
     case SCR_SETUP:
         if (in->down & BTN_PLUS) setup_touch(TOUCH_UP, 70, JOIN_Y + 5);
         if (in->down & BTN_1) toggle_dark();
+        if (in->down & BTN_2) cycle_layout();
         if (in->down & BTN_HOME) quit = 1;
         break;
     case SCR_NAME:
         if (in->down & BTN_B) name_backspace();
         if (in->down & BTN_PLUS) name_finish(1);
         if (in->down & BTN_HOME) name_finish(0);
+        if (in->down & BTN_2) cycle_layout();
         break;
     case SCR_PAIR:
     case SCR_CONNECTING:
+        if (in->down & BTN_2) cycle_layout();
         if (in->down & (BTN_B | BTN_HOME)) {
             pair_cancel();
             chat_disconnect();
@@ -520,7 +526,7 @@ static void handle_input(const input_t *in)
             chat_disconnect();
             screen = SCR_SETUP;
         }
-        if (in->down & BTN_2) cycle_zoom();
+        if (in->down & BTN_2) cycle_layout();
         if ((in->pointer || in->touch_mode) && (in->down & (BTN_UP | BTN_DOWN))) {
             room_shift_target = (in->down & BTN_DOWN) ? 32 : 0;
             sound_play(SND_SCROLL);
@@ -539,7 +545,7 @@ static void handle_input(const input_t *in)
             sound_play(SND_CLEAR);
         }
         if (in->down & BTN_1) compose_next_keyboard();
-        if (in->down & BTN_2) cycle_zoom();
+        if (in->down & BTN_2) cycle_layout();
         if ((in->pointer || in->touch_mode) && (in->down & BTN_UP)) log_scroll(-1), sound_play(SND_SCROLL);
         if ((in->pointer || in->touch_mode) && (in->down & BTN_DOWN)) log_scroll(1), sound_play(SND_SCROLL);
         if ((in->pointer || in->touch_mode) && (in->down & BTN_LEFT)) compose_toggle_pen_size();
@@ -547,6 +553,7 @@ static void handle_input(const input_t *in)
         break;
     case SCR_CLOSED:
         if (in->down & (BTN_A | BTN_B | BTN_PLUS)) screen = SCR_SETUP;
+        if (in->down & BTN_2) cycle_layout();
         if (in->down & BTN_HOME) quit = 1;
         break;
     default:
@@ -774,19 +781,19 @@ static void draw_loading(void)
 
 /* Control hints: pairs of button and action */
 static const char *const ROOM_HINTS[] = {
-    "Touch", "Draw / type", "B", "Backspace", "+", "Send", "-", "Clear", "Y / 1", "Keyboard", "X / 2", "Zoom",
+    "Touch", "Draw / type", "B", "Backspace", "+", "Send", "-", "Clear", "Y / 1", "Keyboard", "X / 2", "Layout",
     "Up/Down", "Scroll", "HOME", "Leave",
 };
-static const char *const LOBBY_HINTS[] = { "Touch", "Select", "X / 2", "Zoom", "B", "Back", "HOME", "Back" };
-static const char *const MENU_HINTS[] = { "Touch", "Select", "B", "Back", "HOME", "Quit" };
-static const char *const SETUP_HINTS[] = { "Touch", "Select", "+", "Join", "Y / 1", "Dark Mode", "HOME", "Quit" };
+static const char *const LOBBY_HINTS[] = { "Touch", "Select", "X / 2", "Layout", "B", "Back", "HOME", "Back" };
+static const char *const MENU_HINTS[] = { "Touch", "Select", "X / 2", "Layout", "B", "Back", "HOME", "Quit" };
+static const char *const SETUP_HINTS[] = { "Touch", "Select", "+", "Join", "Y / 1", "Dark Mode", "X / 2", "Layout", "HOME", "Quit" };
 
 static const char *const *hints_for_screen(int *count)
 {
     if (screen == SCR_ROOM) { *count = 16; return ROOM_HINTS; }
     if (screen == SCR_LOBBY) { *count = 8; return LOBBY_HINTS; }
-    if (screen == SCR_SETUP) { *count = 8; return SETUP_HINTS; }
-    *count = 6;
+    if (screen == SCR_SETUP) { *count = 10; return SETUP_HINTS; }
+    *count = 8;
     return MENU_HINTS;
 }
 
@@ -799,89 +806,114 @@ static void draw_hint(int x, int y, int max_w, const char *key, const char *acti
     text_draw_fit(FONT_BOLD, 13, x + kw + 7, y - 1, max_w - kw - 7, 0xFFFFFF, action);
 }
 
+static int in_chat(void) { return screen == SCR_LOBBY || screen == SCR_ROOM || screen == SCR_CLOSED; }
+
 static int status_height(void)
 {
-    if (screen != SCR_LOBBY && screen != SCR_ROOM && screen != SCR_CLOSED) return 0;
-    return 26 + (screen == SCR_ROOM && room_index >= 0 ? 24 : 0) + (unread && stage_view() == VIEW_BOTTOM ? 28 : 0);
+    if (!in_chat()) return 24;
+    return 50 + (screen == SCR_ROOM && room_index >= 0 ? 24 : 0) + (unread && stage_view() == VIEW_BOTTOM ? 28 : 0);
 }
 
-/* Who and where, from (x, y) down; returns the y after it */
+/* Who and where, and the layout, from (x, y) down; returns the y after it */
 static int draw_status(int x, int y, int w)
 {
-    if (screen != SCR_LOBBY && screen != SCR_ROOM && screen != SCR_CLOSED) return y;
-    gfx_fill(x, y + 5, 12, 12, my_color);
-    gfx_fill(x, y + 5, 12, 1, 0xFFFFFF);
-    text_draw_fit(FONT_BOLD, 15, x + 18, y, w - 18, 0xFFFFFF, my_name);
-    y += 26;
-    if (screen == SCR_ROOM && room_index >= 0) {
-        char r[48];
-        if (private_room) snprintf(r, sizeof r, "Private room");
-        else snprintf(r, sizeof r, "Chat Room %c", 'A' + room_index);
-        text_draw_fit(FONT_BOLD, 15, x, y, w, 0xE0E0E0, r);
-        y += 24;
+    if (in_chat()) {
+        gfx_fill(x, y + 5, 12, 12, my_color);
+        gfx_fill(x, y + 5, 12, 1, 0xFFFFFF);
+        text_draw_fit(FONT_BOLD, 15, x + 18, y, w - 18, 0xFFFFFF, my_name);
+        y += 26;
+        if (screen == SCR_ROOM && room_index >= 0) {
+            char r[48];
+            if (private_room) snprintf(r, sizeof r, "Private room");
+            else snprintf(r, sizeof r, "Chat Room %c", 'A' + room_index);
+            text_draw_fit(FONT_BOLD, 15, x, y, w, 0xE0E0E0, r);
+            y += 24;
+        }
+        if (unread && stage_view() == VIEW_BOTTOM) {
+            char n[48];
+            snprintf(n, sizeof n, unread == 1 ? "1 new message" : "%d new messages", unread);
+            gfx_round(x - 4, y + 1, text_width(FONT_BOLD, 14, n) + 8, 22, 4, my_color);
+            text_draw(FONT_BOLD, 14, x, y, 0xFFFFFF, n);
+            y += 28;
+        }
     }
-    if (unread && stage_view() == VIEW_BOTTOM) {
-        char n[48];
-        snprintf(n, sizeof n, unread == 1 ? "1 new message" : "%d new messages", unread);
-        gfx_round(x - 4, y + 1, text_width(FONT_BOLD, 14, n) + 8, 22, 4, my_color);
-        text_draw(FONT_BOLD, 14, x, y, 0xFFFFFF, n);
-        y += 28;
-    }
-    return y;
+    text_draw_fit(FONT_BOLD, 13, x, y + 1, w, 0xB0B0B0, stage_view_name(stage_view()));
+    return y + 24;
 }
 
-static void draw_side_panels(void)
+/* Hints flowing left to right at their own widths inside x0..x1, from y down to y1 */
+static void draw_hint_flow(int x0, int x1, int y, int y1, const char *const *hints, int count)
 {
-    int x, y, w, h;
-    stage_rect(&x, &y, &w, &h);
-    /* the tiled background is drawn once per layout and copied in every frame */
-    static u32 *background;
-    static int background_x = -1, background_y = -1;
-    if (!background) background = malloc(SW * SH * 4);
-    if (background_x != x || background_y != y + h || !background) {
+    int hx = x0;
+    for (int i = 0; i < count; i += 2) {
+        int hw = text_width(FONT_BOLD, 13, hints[i]) + 12 + 7 + text_width(FONT_BOLD, 13, hints[i + 1]);
+        if (hw > x1 - x0) hw = x1 - x0;
+        if (hx + hw > x1 && hx > x0) {
+            hx = x0;
+            y += 26;
+        }
+        if (y + 22 > y1) return;
+        draw_hint(hx, y, hw, hints[i], hints[i + 1]);
+        hx += hw + 14;
+    }
+}
+
+/* The selected screen's picture around the stage: the tiled background, the
+ * frames of the panes, the name and the controls */
+static void draw_side_panels(int which)
+{
+    const layout_t *l = stage_layout(which);
+    /* the background is drawn once per layout and copied in every frame */
+    static u32 *background[2];
+    static layout_t background_for[2];
+    static int background_ok[2];
+    if (!background[which]) background[which] = malloc(852 * 480 * 4);
+    if (!background_ok[which] || memcmp(&background_for[which], l, sizeof *l) || !background[which]) {
         if (img[IMG_BODY_BG]) {
             for (int ty = 0; ty < SH; ty += img[IMG_BODY_BG]->h)
                 for (int tx = 0; tx < SW; tx += img[IMG_BODY_BG]->w) gfx_blit(img[IMG_BODY_BG], tx, ty);
         } else {
             gfx_fill(0, 0, SW, SH, 0xD8D8D8);
         }
-        gfx_fill(x - 1, y, 1, h, 0x000000);
-        gfx_fill(x + w, y, 1, h, 0x000000);
-        if (y > 0) gfx_fill(x - 1, y - 1, w + 2, 1, 0x000000);
-        if (y + h < SH) gfx_fill(x - 1, y + h, w + 2, 1, 0x000000);
-        if (background) memcpy(background, canvas, SW * SH * 4);
-        background_x = x;
-        background_y = y + h;
+        for (int i = 0; i < l->npanes; i++) {
+            const pane_t *p = &l->pane[i];
+            gfx_fill(p->x - 1, p->y - 1, p->w + 2, 1, 0x000000);
+            gfx_fill(p->x - 1, p->y + p->h, p->w + 2, 1, 0x000000);
+            gfx_fill(p->x - 1, p->y, 1, p->h, 0x000000);
+            gfx_fill(p->x + p->w, p->y, 1, p->h, 0x000000);
+        }
+        if (background[which]) {
+            memcpy(background[which], canvas, SW * SH * 4);
+            background_for[which] = *l;
+            background_ok[which] = 1;
+        }
     } else {
-        memcpy(canvas, background, SW * SH * 4);
+        memcpy(canvas, background[which], SW * SH * 4);
     }
 
     int count;
     const char *const *hints = hints_for_screen(&count);
-    int left = x - 16, right = SW - (x + w) - 16;
 
-    if (left < 110) {
-        /* no room at the sides (a zoomed screen in 4:3): one bar underneath */
-        int by = y + h + 6, bh = SH - by - 6;
-        if (bh < 40) return;
-        gfx_fill_alpha(6, by, SW - 12, bh, 0x000000, 175);
-        int col = 136;
-        draw_status(16, by + 8, col - 20);
-        /* hints flow left to right at their own widths */
-        int gx = 16 + col, hx = gx, hy = by + 8;
-        for (int i = 0; i < count; i += 2) {
-            int hw = text_width(FONT_BOLD, 13, hints[i]) + 12 + 7 + text_width(FONT_BOLD, 13, hints[i + 1]);
-            if (hx + hw > SW - 14 && hx > gx) {
-                hx = gx;
-                hy += 26;
-            }
-            draw_hint(hx, hy, hw, hints[i], hints[i + 1]);
-            hx += hw + 14;
+    if (!l->sides) {
+        /* one box: the name and the layout, then the controls */
+        int bx = l->hud_x, by = l->hud_y, bw = l->hud_w, bh = l->hud_h;
+        if (bw < 60 || bh < 40) return;
+        gfx_fill_alpha(bx, by, bw, bh, 0x000000, 175);
+        if (bw >= 400) {
+            int col = 136;
+            draw_status(bx + 10, by + 8, col - 20);
+            draw_hint_flow(bx + col, bx + bw - 8, by + 8, by + bh - 4, hints, count);
+        } else {
+            int y = draw_status(bx + 10, by + 8, bw - 20);
+            draw_hint_flow(bx + 10, bx + bw - 8, y, by + bh - 4, hints, count);
         }
         return;
     }
 
     /* the side panels sit on a dark overlay so the text stands out from the stripes */
+    const pane_t *p = &l->pane[0];
+    int x = p->x, y = p->y, w = p->w;
+    int left = x - 16, right = SW - (x + w) - 16;
     int pw = left - 20, top = y > 16 ? y : 16;
     gfx_fill_alpha(8, top, left, 52 + status_height(), 0x000000, 175);
     text_draw(FONT_BOLD, 18, 18, top + 10, 0xFFFFFF, "PictoChat");
@@ -895,18 +927,54 @@ static void draw_side_panels(void)
     for (int i = 0; i < count; i += 2) draw_hint(rx, top + 46 + i / 2 * 26, pw, hints[i], hints[i + 1]);
 }
 
-static void cycle_zoom(void)
+/* Which layouts a screen can use: the setup screens need both DS screens, and
+ * the pairing overlay needs a single picture of both */
+static int view_allowed(int v)
 {
-    zoom = zoom == VIEW_BOTH ? VIEW_BOTTOM : zoom == VIEW_BOTTOM ? VIEW_TOP : VIEW_BOTH;
+    if (screen == SCR_PAIR || screen == SCR_CONNECTING) return v == VIEW_BOTH || v == VIEW_TALL || v == VIEW_TALL_FLIP;
+    if (in_chat()) return 1;
+    return v != VIEW_TOP && v != VIEW_BOTTOM;
+}
+
+static void cycle_layout(void)
+{
+    int v = stage_view();
+    do v = (v + 1) % VIEW_COUNT;
+    while (!view_allowed(v));
+    layout = v;
+    settings.layout = v;
+    settings_save();
     sound_play(SND_SCROLL);
 }
 
-/* Zooming applies in the lobby and rooms; everything else shows both screens */
 static void apply_view(void)
 {
-    int want = screen == SCR_LOBBY || screen == SCR_ROOM || screen == SCR_CLOSED ? zoom : VIEW_BOTH;
-    if (stage_view() != want) stage_set_view(want);
+    int want = view_allowed(layout) ? layout : VIEW_BOTH;
+    if (stage_view() != want) {
+        stage_set_view(want);
+        input_set_gamepad_turn(stage_gamepad_turn());
+    }
     if (want != VIEW_BOTTOM) unread = 0;
+}
+
+static void fill_view(gfx_view *v, int which, unsigned serial, int panes)
+{
+    const layout_t *l = stage_layout(which);
+    memset(v, 0, sizeof *v);
+    v->canvas = stage_canvas(which);
+    v->w = l->w;
+    v->h = l->h;
+    v->rot = l->rot;
+    v->serial = serial;
+    v->npanes = panes ? l->npanes : 0;
+    for (int i = 0; i < v->npanes; i++) {
+        v->pane[i].sy = l->pane[i].sy;
+        v->pane[i].sh = l->pane[i].sh;
+        v->pane[i].x = l->pane[i].x;
+        v->pane[i].y = l->pane[i].y;
+        v->pane[i].w = l->pane[i].w;
+        v->pane[i].h = l->pane[i].h;
+    }
 }
 
 static void draw(void)
@@ -924,11 +992,18 @@ static void draw(void)
         }
     }
 #endif
+    static unsigned serial[2];
+    static char last_key[2][96];
+    gfx_view views[2];
     if (screen == SCR_LOADING) {
         draw_loading();
-        gfx_canvas_changed();
-        gfx_layer(NULL, 0, 0, 0, 0, 0, 0, 0);
-        gfx_present(0, 0, 0);
+        last_key[SCREEN_TV][0] = 0;
+        fill_view(&views[0], SCREEN_TV, ++serial[SCREEN_TV], 0);
+        views[0].w = SW;
+        views[0].h = SH;
+        views[0].rot = 0;
+        gfx_stage(NULL, 0, 0, 0);
+        gfx_present(&views[0], NULL);
         return;
     }
 #ifdef AUTOTEST
@@ -947,35 +1022,36 @@ static void draw(void)
     }
     stage_end();
 
-    /* The canvas holds the side panels (and overlays); it only goes to the GPU when it changes.
-     * The stage is scaled by the GPU on top of it. */
+    /* Each screen's picture holds the side panels (and overlays); it only goes to
+     * the GPU when it changes. The stage is scaled by the GPU on top of it. */
     int overlay = screen == SCR_PAIR || screen == SCR_CONNECTING;
-    char key[96];
-    snprintf(key, sizeof key, "%d %s %06x %d %d %d %d %d", screen, my_name, (unsigned)my_color, room_index, private_room,
-             stage_view(), unread, stage_dark());
-    static char last_key[96];
     int cpu_stage = overlay;
-    if (cpu_stage || strcmp(key, last_key)) {
-        snprintf(last_key, sizeof last_key, "%s", cpu_stage ? "" : key);
-        draw_side_panels();
-        if (cpu_stage) stage_present();
-        if (screen == SCR_PAIR) draw_pairing_overlay();
-        else if (screen == SCR_CONNECTING) draw_connecting_overlay();
-        gfx_canvas_changed();
+    int screens = stage_mirrored() ? 1 : 2;
+    for (int s = 0; s < screens; s++) {
+        char key[96];
+        snprintf(key, sizeof key, "%d %d %s %06x %d %d %d %d %d", s, screen, my_name, (unsigned)my_color, room_index,
+                 private_room, stage_view(), unread, stage_dark());
+        if (cpu_stage || strcmp(key, last_key[s])) {
+            snprintf(last_key[s], sizeof last_key[s], "%s", cpu_stage ? "" : key);
+            stage_select(s);
+            draw_side_panels(s);
+            if (cpu_stage) stage_present();
+            if (screen == SCR_PAIR) draw_pairing_overlay();
+            else if (screen == SCR_CONNECTING) draw_connecting_overlay();
+            stage_unselect();
+            serial[s]++;
+        }
+        fill_view(&views[s], s, serial[s], !cpu_stage);
     }
-    if (cpu_stage) {
-        gfx_layer(NULL, 0, 0, 0, 0, 0, 0, 0);
-    } else {
-        int x, y, w, h;
-        stage_rect(&x, &y, &w, &h);
-        int rows;
-        const u32 *px = stage_pixels(&rows);
-        gfx_layer(px, STAGE_W, rows, x, y, w, h, stage_dark());
-    }
+    /* the pointer is the TV's; a finger on the GamePad needs none */
+    views[0].cursor = cursor_visible;
+    views[0].cx = cur_x;
+    views[0].cy = cur_y;
+    gfx_stage(cpu_stage ? NULL : stage_pixels(), STAGE_W, STAGE_H, stage_dark());
 #ifdef AUTOTEST
     u64 t1 = gettime();
 #endif
-    gfx_present(cursor_visible, cur_x, cur_y);
+    gfx_present(&views[0], screens == 2 ? &views[1] : NULL);
 #ifdef AUTOTEST
     static u64 stage_acc, tv_acc;
     stage_acc += t1 - ts;
@@ -1051,6 +1127,7 @@ void app_run(void)
     TLOG("app start %dx%d", SW, SH);
     stage_init();
     stage_set_dark(settings.dark);
+    layout = settings.layout;
     sound_volume(settings.volume * 255 / 100);
     input_t in;
     while (!quit) {

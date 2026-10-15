@@ -19,7 +19,7 @@ Public rooms are public and logged by PictoChat Online, and flagged messages go 
 
 ## Controls
 
-The GamePad's touch screen is the stylus: touch and drag to draw, or tap keys, tools and rooms. Drag a key into the box to drop a letter anywhere. The TV and the GamePad show the same picture.
+The GamePad's touch screen is the stylus: touch and drag to draw, or tap keys, tools and rooms. Drag a key into the box to drop a letter anywhere.
 
 | GamePad | Wii Remote | In a room | Elsewhere |
 | --- | --- | --- | --- |
@@ -28,20 +28,38 @@ The GamePad's touch screen is the stylus: touch and drag to draw, or tap keys, t
 | + / R / ZR | + | Send | Join |
 | − / L / ZL | − | Clear | |
 | Y | 1 | Next keyboard (accents, kana, symbols, emoji) | Dark Mode (on the first screen) |
-| X | 2 | Zoom: both screens, the bottom screen, the top screen | Zoom (in the room list) |
+| X | 2 | Next screen layout | Next screen layout |
 | Up / Down | Up / Down | Scroll the messages | Scroll the room list |
 | Left / Right | Left / Right | Pen size / pen, rainbow pen, eraser | |
 | HOME | HOME | Leave the room | Quit |
 
-Zooming shows one screen at twice the size, which makes the keyboard much easier to hit. While the bottom screen is zoomed, the HUD counts the messages that came in so you know to look up. Renew (copy the message you're looking at) is the button under Send on the touch screen.
+Renew (copy the message you're looking at) is the button under Send on the touch screen.
 
-The Wii Remote (pointer and buttons, with or without a Nunchuk), Classic Controller and Wii U Pro Controller work too. Without a pointer or the touch screen, the D-Pad or stick moves a cursor. On a USB keyboard you can type straight into the box: Enter sends (Shift+Enter for a new line), arrows and Page Up/Down work like on pict.chat, Tab changes the keyboard, F1 zooms and Esc leaves the room.
+## Screen layouts
+
+X (2 on a Wii Remote, F1 on a keyboard) cycles through the layouts of the DS Virtual Console. The side panels show the current layout's name, and the app remembers your choice.
+
+| Layout | TV | GamePad |
+| --- | --- | --- |
+| Both screens | Both screens stacked, as on pict.chat | Same as the TV |
+| Bottom screen | The bottom screen at twice the size | Same as the TV |
+| Top screen | The top screen at twice the size | Same as the TV |
+| Side by side | Both screens next to each other | Same as the TV |
+| Large bottom screen | A large bottom screen next to a small top screen | Same as the TV |
+| Large top screen | A large top screen next to a small bottom screen | Same as the TV |
+| TV and GamePad | The top screen | The bottom screen |
+| Upright GamePad | Both screens stacked | Both screens stacked across the whole GamePad; hold it upright with the D-Pad at the bottom |
+| Upright GamePad (flipped) | Both screens stacked | The same, with the D-Pad at the top |
+
+When you hold the GamePad upright, its D-Pad and stick turn with it, so Up is still up. Bottom screen and Top screen only show up in the room list and the chat rooms, because the setup screens need both DS screens. While pairing, only Both screens and the upright layouts are available. When you're on the Bottom screen layout, the side panel counts the messages that came in so you know to look up.
+
+The Wii Remote (pointer and buttons, with or without a Nunchuk), Classic Controller and Wii U Pro Controller work too. Without a pointer or the touch screen, the D-Pad or stick moves a cursor. On a USB keyboard you can type straight into the box: Enter sends (Shift+Enter for a new line), arrows and Page Up/Down work like on pict.chat, Tab changes the keyboard, F1 changes the layout and Esc leaves the room.
 
 In private rooms (Chat Room E), send `!join` followed by a room code to move to another private room. pict.chat's other commands (`!list`, `!tripcode`, `!block`) work too.
 
 ## Settings
 
-`sd:/wiiu/apps/PictoChat/settings.txt` remembers your name, colour, Dark Mode (`dark=1`, the same as pict.chat's) and the sound volume (`volume=0`..`100`). To use another PictoChat Online server, for example a self-hosted [ayunpictojava](https://github.com/ayunami2000/ayunpictojava):
+`sd:/wiiu/apps/PictoChat/settings.txt` remembers your name, colour, Dark Mode (`dark=1`, the same as pict.chat's), the screen layout (`layout=both`, `bottom`, `top`, `side`, `big-bottom`, `big-top`, `split`, `upright` or `upright-flipped`) and the sound volume (`volume=0`..`100`). To use another PictoChat Online server, for example a self-hosted [ayunpictojava](https://github.com/ayunami2000/ayunpictojava):
 
 ```
 chat=ws://192.168.1.10:8080/

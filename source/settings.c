@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include "platform.h"
 #include "settings.h"
+#include "stage.h"
 #include "version.h"
 
 settings_t settings;
@@ -43,6 +44,7 @@ void settings_load(const char *argv0)
         else if (!strcmp(line, "captcha")) settings.captcha = atoi(v) != 0;
         else if (!strcmp(line, "volume")) settings.volume = atoi(v);
         else if (!strcmp(line, "dark")) settings.dark = atoi(v) != 0;
+        else if (!strcmp(line, "layout")) settings.layout = stage_view_from_key(v);
     }
     fclose(f);
     trim_slash(settings.site);
@@ -66,5 +68,6 @@ void settings_save(void)
     if (strcmp(settings.pair, DEFAULT_PAIR)) fprintf(f, "pair=%s\n", settings.pair);
     if (!settings.captcha) fprintf(f, "captcha=0\n");
     if (settings.dark) fprintf(f, "dark=1\n");
+    if (settings.layout != VIEW_BOTH) fprintf(f, "layout=%s\n", stage_view_key(settings.layout));
     fclose(f);
 }

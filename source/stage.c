@@ -7,9 +7,9 @@
 static u32 *stage_px;
 static u32 *saved_canvas;
 static int saved_w, saved_h;
-static int out_x, out_y, out_w, out_h;
-static u16 *col_index, *row_index;
-static u8 *col_weight, *row_weight;
+static u32 *pad_canvas;              /* the GamePad's own picture, when it differs from the TV's */
+static u32 *sel_canvas;
+static int sel_w, sel_h, selected = SCREEN_TV;
 
 #define R(c) (((c) >> 16) & 0xFF)
 #define G(c) (((c) >> 8) & 0xFF)
@@ -34,7 +34,8 @@ static void scale_table(int n, int m, u16 *index, u8 *weight)
     }
 }
 
-static int view, src_y, src_h;
+static int view;
+static layout_t layouts[2];
 int stage_dark_on;
 static int flip;
 
@@ -55,42 +56,143 @@ static inline u32 hue_flip(u32 c)
     return r << 16 | g << 8 | b;
 }
 
-/* Both screens at 1.25x filling the height, or one screen at 2x. In 4:3 a zoomed
- * screen sits at the top so the HUD fits underneath; in 16:9 it is centred. */
+static const char *const VIEW_NAMES[VIEW_COUNT] = {
+    "Both screens", "Bottom screen", "Top screen", "Side by side", "Large bottom screen",
+    "Large top screen", "TV and GamePad", "Upright GamePad", "Upright GamePad (flipped)",
+};
+
+static const char *const VIEW_KEYS[VIEW_COUNT] = {
+    "both", "bottom", "top", "side", "big-bottom", "big-top", "split", "upright", "upright-flipped",
+};
+
+const char *stage_view_name(int v) { return v >= 0 && v < VIEW_COUNT ? VIEW_NAMES[v] : ""; }
+const char *stage_view_key(int v) { return v >= 0 && v < VIEW_COUNT ? VIEW_KEYS[v] : VIEW_KEYS[0]; }
+
+int stage_view_from_key(const char *key)
+{
+    for (int i = 0; i < VIEW_COUNT; i++)
+        if (!strcmp(key, VIEW_KEYS[i])) return i;
+    return VIEW_BOTH;
+}
+
+static void pane(layout_t *l, int sy, int sh, int x, int y, int w, int h)
+{
+    pane_t *p = &l->pane[l->npanes++];
+    p->sy = sy;
+    p->sh = sh;
+    p->x = x;
+    p->y = y;
+    p->w = w;
+    p->h = h;
+}
+
+static void hud(layout_t *l, int x, int y, int w, int h)
+{
+    l->hud_x = x;
+    l->hud_y = y;
+    l->hud_w = w;
+    l->hud_h = h;
+}
+
+/* One layout on a 852x480 picture (or 480x852 upright) */
+static void make_layout(layout_t *l, int v)
+{
+    memset(l, 0, sizeof *l);
+    l->w = 852;
+    l->h = 480;
+    switch (v) {
+    default:
+    case VIEW_BOTH: /* 1.25x, filling the height */
+        pane(l, 0, STAGE_H, (852 - 320) / 2, 0, 320, 480);
+        l->sides = 1;
+        break;
+    case VIEW_TOP:
+    case VIEW_BOTTOM: /* 2x, centred */
+        pane(l, v == VIEW_BOTTOM ? 192 : 0, 192, (852 - 512) / 2, 48, 512, 384);
+        l->sides = 1;
+        break;
+    case VIEW_SIDE: /* 1.625x each, the name and controls underneath */
+        pane(l, 0, 192, 10, 12, 416, 312);
+        pane(l, 192, 192, 426, 12, 416, 312);
+        hud(l, 10, 336, 832, 132);
+        break;
+    case VIEW_BIG_BOTTOM: /* the small top screen on the left, the name and controls under it */
+        pane(l, 192, 192, 312, 48, 512, 384);
+        pane(l, 0, 192, 28, 48, 256, 192);
+        hud(l, 28, 252, 256, 180);
+        break;
+    case VIEW_BIG_TOP:
+        pane(l, 0, 192, 28, 48, 512, 384);
+        pane(l, 192, 192, 568, 48, 256, 192);
+        hud(l, 568, 252, 256, 180);
+        break;
+    case VIEW_TALL:
+    case VIEW_TALL_FLIP: /* 1.875x across the upright GamePad, the name and controls underneath */
+        l->w = 480;
+        l->h = 852;
+        l->rot = v == VIEW_TALL ? 90 : 270;
+        pane(l, 0, STAGE_H, 0, 0, 480, 720);
+        hud(l, 6, 726, 468, 120);
+        break;
+    }
+}
+
 void stage_set_view(int v)
 {
     view = v;
-    src_y = v == VIEW_BOTTOM ? 192 : 0;
-    src_h = v == VIEW_BOTH ? STAGE_H : 192;
-    if (v == VIEW_BOTH) {
-        out_h = SH;
-        out_w = STAGE_W * SH / STAGE_H;
-        out_y = 0;
-    } else {
-        out_w = STAGE_W * 2;
-        out_h = 192 * 2;
-        out_y = SW >= 800 ? (SH - out_h) / 2 : 0;
+    switch (v) {
+    case VIEW_SPLIT:
+        make_layout(&layouts[SCREEN_TV], VIEW_TOP);
+        make_layout(&layouts[SCREEN_GAMEPAD], VIEW_BOTTOM);
+        break;
+    case VIEW_TALL:
+    case VIEW_TALL_FLIP: /* the TV keeps both screens */
+        make_layout(&layouts[SCREEN_TV], VIEW_BOTH);
+        make_layout(&layouts[SCREEN_GAMEPAD], v);
+        break;
+    default:
+        make_layout(&layouts[SCREEN_TV], v);
+        layouts[SCREEN_GAMEPAD] = layouts[SCREEN_TV];
+        break;
     }
-    out_x = (SW - out_w) / 2;
-    free(col_index);
-    free(col_weight);
-    free(row_index);
-    free(row_weight);
-    col_index = malloc(out_w * sizeof(u16));
-    col_weight = malloc(out_w);
-    row_index = malloc(out_h * sizeof(u16));
-    row_weight = malloc(out_h);
-    scale_table(STAGE_W, out_w, col_index, col_weight);
-    scale_table(src_h, out_h, row_index, row_weight);
 }
 
 int stage_view(void) { return view; }
+const layout_t *stage_layout(int screen) { return &layouts[screen == SCREEN_GAMEPAD]; }
+int stage_mirrored(void) { return view != VIEW_SPLIT && view != VIEW_TALL && view != VIEW_TALL_FLIP; }
+int stage_gamepad_turn(void) { return layouts[SCREEN_GAMEPAD].rot; }
+u32 *stage_canvas(int screen) { return screen == SCREEN_GAMEPAD ? pad_canvas : canvas; }
 
 void stage_init(void)
 {
     stage_px = memalign(32, STAGE_W * STAGE_H * 4);
     memset(stage_px, 0, STAGE_W * STAGE_H * 4);
+    pad_canvas = memalign(32, SW * SH * 4);
+    memset(pad_canvas, 0, SW * SH * 4);
     stage_set_view(VIEW_BOTH);
+}
+
+void stage_select(int screen)
+{
+    selected = screen == SCREEN_GAMEPAD;
+    sel_canvas = canvas;
+    sel_w = SW;
+    sel_h = SH;
+    if (selected) {
+        canvas = pad_canvas;
+        SW = layouts[selected].w;
+        SH = layouts[selected].h;
+    }
+    gfx_noclip();
+}
+
+void stage_unselect(void)
+{
+    canvas = sel_canvas;
+    SW = sel_w;
+    SH = sel_h;
+    selected = SCREEN_TV;
+    gfx_noclip();
 }
 
 void stage_begin(void)
@@ -115,11 +217,30 @@ void stage_end(void)
 
 void stage_present(void)
 {
-    for (int y = 0; y < out_h; y++) {
+    static u16 *col_index, *row_index;
+    static u8 *col_weight, *row_weight;
+    static int tw, th, tsh;
+    const pane_t *p = &layouts[selected].pane[0];
+    if (tw != p->w || th != p->h || tsh != p->sh) {
+        free(col_index);
+        free(col_weight);
+        free(row_index);
+        free(row_weight);
+        col_index = malloc(p->w * sizeof(u16));
+        col_weight = malloc(p->w);
+        row_index = malloc(p->h * sizeof(u16));
+        row_weight = malloc(p->h);
+        scale_table(STAGE_W, p->w, col_index, col_weight);
+        scale_table(p->sh, p->h, row_index, row_weight);
+        tw = p->w;
+        th = p->h;
+        tsh = p->sh;
+    }
+    for (int y = 0; y < p->h; y++) {
         int ry = row_index[y], wy = row_weight[y];
-        const u32 *a = stage_px + (src_y + ry) * STAGE_W, *b = a + STAGE_W;
-        u32 *dst = canvas + (out_y + y) * SW + out_x;
-        for (int x = 0; x < out_w; x++) {
+        const u32 *a = stage_px + (p->sy + ry) * STAGE_W, *b = a + STAGE_W;
+        u32 *dst = canvas + (p->y + y) * SW + p->x;
+        for (int x = 0; x < p->w; x++) {
             int cx = col_index[x], wx = col_weight[x];
             u32 top = wx ? gfx_mix(a[cx], a[cx + 1], wx) : a[cx];
             if (wy) {
@@ -131,28 +252,43 @@ void stage_present(void)
     }
 }
 
-/* the rows the current view shows */
-const u32 *stage_pixels(int *rows) { *rows = src_h; return stage_px + src_y * STAGE_W; }
+const u32 *stage_pixels(void) { return stage_px; }
 
 void stage_rect(int *x, int *y, int *w, int *h)
 {
-    *x = out_x;
-    *y = out_y;
-    *w = out_w;
-    *h = out_h;
+    const pane_t *p = &layouts[selected].pane[0];
+    *x = p->x;
+    *y = p->y;
+    *w = p->w;
+    *h = p->h;
 }
 
-int stage_from_canvas(int px, int py, float *sx, float *sy)
+int stage_from_screen(int screen, int px, int py, int want, float *sx, float *sy)
 {
-    *sx = (px - out_x + 0.5f) * STAGE_W / out_w;
-    *sy = src_y + (py - out_y + 0.5f) * src_h / out_h;
-    return *sx >= 0 && *sy >= src_y && *sx < STAGE_W && *sy < src_y + src_h;
-}
-
-void stage_to_canvas(float sx, float sy, int *px, int *py)
-{
-    *px = out_x + (int)(sx * out_w / STAGE_W);
-    *py = out_y + (int)((sy - src_y) * out_h / src_h);
+    const layout_t *l = stage_layout(screen);
+    /* the screen is 852x480; an upright picture is turned onto it */
+    float x = px + 0.5f, y = py + 0.5f, lx = x, ly = y;
+    if (l->rot == 90) {
+        lx = y;
+        ly = l->h - x;
+    } else if (l->rot == 270) {
+        lx = l->w - y;
+        ly = x;
+    }
+    int hit = -1;
+    for (int i = 0; i < l->npanes && hit < 0; i++) {
+        const pane_t *p = &l->pane[i];
+        if (lx >= p->x && ly >= p->y && lx < p->x + p->w && ly < p->y + p->h) hit = i;
+    }
+    int use = want >= 0 && want < l->npanes ? want : hit;
+    if (use < 0) {
+        *sx = *sy = -1000;
+        return -1;
+    }
+    const pane_t *p = &l->pane[use];
+    *sx = (lx - p->x) * STAGE_W / p->w;
+    *sy = p->sy + (ly - p->y) * p->sh / p->h;
+    return hit;
 }
 
 /* ── Sprites ─────────────────────────────────────────────────────────────── */

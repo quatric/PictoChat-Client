@@ -1,9 +1,8 @@
 #pragma once
 #include "platform.h"
 
-/* Software canvas, presented to the TV through the external framebuffer.
- * Colors are 0xRRGGBB; images are 0xAARRGGBB. In 16:9 mode the canvas is
- * wider (852 px) and squeezed back to 640 so nothing looks stretched. */
+/* Software canvas, 852x480, scaled to the TV and the GamePad by the GPU.
+ * Colors are 0xRRGGBB; images are 0xAARRGGBB. */
 
 typedef struct image {
     int w, h;
@@ -16,11 +15,24 @@ extern u32 *canvas;
 void gfx_init(void);
 void gfx_shutdown(void);
 int gfx_widescreen(void);
-void gfx_present(int cursor, int cx, int cy);
-/* Call after drawing into the canvas: it is only re-uploaded to the GPU when it changed */
-void gfx_canvas_changed(void);
-/* A second picture shown over the canvas this frame (w, h multiples of 2), scaled by the GPU; NULL for none */
-void gfx_layer(const u32 *px, int w, int h, float x, float y, float dw, float dh, int invert);
+
+/* What one screen shows this frame: a picture (w x h, upright for the player)
+ * turned rot degrees clockwise onto the 852x480 screen, with stage rows scaled
+ * on top of it by the GPU. Bump serial whenever the picture's pixels change:
+ * it is only uploaded then. */
+typedef struct {
+    const u32 *canvas;
+    int w, h, rot;
+    unsigned serial;
+    int npanes;
+    struct { int sy, sh; float x, y, w, h; } pane[2];
+    int cursor, cx, cy;   /* the pointer, in screen pixels */
+} gfx_view;
+
+/* The stage picture (w, h multiples of 2) the panes come from this frame */
+void gfx_stage(const u32 *px, int w, int h, int invert);
+/* Show tv on the TV and gamepad on the GamePad (NULL: the TV picture) */
+void gfx_present(const gfx_view *tv, const gfx_view *gamepad);
 
 /* gfx_clip pushes a clip rectangle (nested inside the current one); gfx_noclip pops it */
 void gfx_clip(int x, int y, int w, int h);

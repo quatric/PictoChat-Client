@@ -44,6 +44,9 @@ typedef struct {
 void input_init(void);
 void input_shutdown(void);
 void input_set_canvas(int width, int height);
+/* The GamePad picture is turned this far (0, 90 or 270 degrees clockwise) for a
+ * GamePad held upright: its D-Pad and stick turn with it */
+void input_set_gamepad_turn(int degrees);
 void input_poll(input_t *in);
 int input_key(key_event *ev); /* pop one keyboard event; 0 when none */
 int input_keyboard_connected(void);

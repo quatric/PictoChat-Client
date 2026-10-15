@@ -10,6 +10,7 @@ typedef struct {
     int captcha;        /* 0 for self-hosted servers without a captcha */
     int volume;         /* 0..100 */
     int dark;           /* pict.chat's dark mode */
+    int layout;         /* the screen layout (VIEW_*) */
 } settings_t;
 
 extern settings_t settings;

@@ -9,20 +9,59 @@
 #define STAGE_W 256
 #define STAGE_H 384
 
-enum { VIEW_BOTH, VIEW_BOTTOM, VIEW_TOP };
+/* The screen layouts, as on the DS Virtual Console; X / 2 cycles through them */
+enum {
+    VIEW_BOTH,        /* both screens stacked, as on pict.chat */
+    VIEW_BOTTOM,      /* the bottom screen at 2x */
+    VIEW_TOP,         /* the top screen at 2x */
+    VIEW_SIDE,        /* both screens side by side */
+    VIEW_BIG_BOTTOM,  /* a large bottom screen next to a small top screen */
+    VIEW_BIG_TOP,     /* a large top screen next to a small bottom screen */
+    VIEW_SPLIT,       /* the top screen on the TV, the bottom screen on the GamePad */
+    VIEW_TALL,        /* GamePad held upright, D-Pad at the bottom */
+    VIEW_TALL_FLIP,   /* GamePad held upright, D-Pad at the top */
+    VIEW_COUNT
+};
+enum { SCREEN_TV, SCREEN_GAMEPAD };
+
+/* Rows sy..sy+sh of the stage, scaled into x, y, w, h of a picture */
+typedef struct { int sy, sh, x, y, w, h; } pane_t;
+
+/* What the TV or the GamePad shows: a picture of w x h, upright for the
+ * player, turned by rot degrees clockwise onto the 852x480 screen (a GamePad
+ * held upright has a 480x852 picture). The name and controls go either side of
+ * pane 0 (sides) or in the box hud_x, hud_y, hud_w, hud_h. */
+typedef struct {
+    int w, h, rot;
+    int npanes;
+    pane_t pane[2];
+    int sides;
+    int hud_x, hud_y, hud_w, hud_h;
+} layout_t;
 
 void stage_init(void);
-void stage_set_view(int view);   /* both screens, or one of them zoomed in */
+void stage_set_view(int view);
 int stage_view(void);
+const char *stage_view_name(int view);
+const char *stage_view_key(int view);   /* its name in settings.txt */
+int stage_view_from_key(const char *key); /* VIEW_BOTH when unknown */
+const layout_t *stage_layout(int screen);
+int stage_mirrored(void);        /* the GamePad shows the TV picture */
+int stage_gamepad_turn(void);    /* 0, 90 or 270: how far the GamePad picture is turned */
+/* Draw the side panels and overlays of one screen: canvas, SW and SH become its picture */
+void stage_select(int screen);
+void stage_unselect(void);
+u32 *stage_canvas(int screen);
 void stage_begin(void);
 void stage_end(void);
-void stage_present(void);           /* scale into the canvas on the CPU (for overlays) */
-const u32 *stage_pixels(int *rows);
-/* Where the stage sits on the TV canvas */
+void stage_present(void);           /* scale pane 0 into the selected picture on the CPU (for overlays) */
+const u32 *stage_pixels(void);      /* all 384 rows */
+/* Where pane 0 sits on the selected picture (the TV's outside stage_select) */
 void stage_rect(int *x, int *y, int *w, int *h);
-/* TV canvas pixel -> stage coordinates; 1 when inside the stage */
-int stage_from_canvas(int px, int py, float *sx, float *sy);
-void stage_to_canvas(float sx, float sy, int *px, int *py);
+/* A point on the 852x480 screen -> stage coordinates. Returns the pane it is
+ * in, or -1; with pane >= 0 that pane is used even outside it (strokes leaving
+ * the screen they started on). */
+int stage_from_screen(int screen, int px, int py, int pane, float *sx, float *sy);
 
 /* Drawing helpers in stage pixels, as PIXI sprites with tint and alpha */
 void stage_blit(const image_t *img, int x, int y, u32 tint, int alpha);

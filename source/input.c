@@ -15,6 +15,7 @@ static int last_px = -1000, last_py = -1000;
 static u32 prev_dirs;
 static int dir_frames;
 static int quit_requested;
+static int pad_turn;
 
 /* the GamePad touch screen, which is the stylus */
 static int touch_down, touch_release, touch_x, touch_y, touch_mode;
@@ -35,6 +36,20 @@ static u32 map_vpad(u32 b)
     if (b & (VPAD_BUTTON_DOWN | VPAD_STICK_L_EMULATION_DOWN)) out |= BTN_DOWN;
     if (b & (VPAD_BUTTON_LEFT | VPAD_STICK_L_EMULATION_LEFT)) out |= BTN_LEFT;
     if (b & (VPAD_BUTTON_RIGHT | VPAD_STICK_L_EMULATION_RIGHT)) out |= BTN_RIGHT;
+    return out;
+}
+
+/* Directions as the player sees them on a GamePad held upright. Turned 90
+ * degrees (the D-Pad at the bottom), its up points left; turned 270, right. */
+static u32 turn_dirs(u32 b)
+{
+    if (!pad_turn) return b;
+    u32 out = b & ~BTN_DIRS;
+    int cw = pad_turn == 270;
+    if (b & BTN_UP) out |= cw ? BTN_RIGHT : BTN_LEFT;
+    if (b & BTN_RIGHT) out |= cw ? BTN_DOWN : BTN_UP;
+    if (b & BTN_DOWN) out |= cw ? BTN_LEFT : BTN_RIGHT;
+    if (b & BTN_LEFT) out |= cw ? BTN_UP : BTN_DOWN;
     return out;
 }
 
@@ -177,6 +192,8 @@ void input_set_canvas(int width, int height)
     canvas_h = height;
 }
 
+void input_set_gamepad_turn(int degrees) { pad_turn = degrees; }
+
 void input_shutdown(void)
 {
     OSEnableHomeButtonMenu(TRUE);
@@ -232,7 +249,7 @@ void input_poll(input_t *in)
     if (n > 0 && verr == VPAD_READ_SUCCESS) {
         int touched = 0;
         for (int i = n - 1; i >= 0; i--) { /* oldest first */
-            down |= map_vpad(vs[i].trigger);
+            down |= turn_dirs(map_vpad(vs[i].trigger));
             VPADTouchData tp;
             VPADGetTPCalibratedPoint(VPAD_CHAN_0, &tp, &vs[i].tpNormal);
             if (!tp.touched) continue;
@@ -241,7 +258,7 @@ void input_poll(input_t *in)
             if (!(tp.validity & VPAD_INVALID_X)) touch_x = tp.x * canvas_w / 1280;
             if (!(tp.validity & VPAD_INVALID_Y)) touch_y = tp.y * canvas_h / 720;
         }
-        held |= map_vpad(vs[0].hold);
+        held |= turn_dirs(map_vpad(vs[0].hold));
         if (touched) {
             if (!touch_down) down |= BTN_A;
             touch_down = 1;
