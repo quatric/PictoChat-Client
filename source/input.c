@@ -17,7 +17,7 @@ static int dir_frames;
 static int quit_requested;
 
 /* the GamePad touch screen, which is the stylus */
-static int touch_down, touch_x, touch_y, touch_mode;
+static int touch_down, touch_release, touch_x, touch_y, touch_mode;
 
 /* ── Controller mapping ──────────────────────────────────────────────────── */
 
@@ -221,21 +221,32 @@ void input_poll(input_t *in)
         }
     }
 
-    /* The GamePad: its touch screen is the stylus and wins over a Wii Remote */
-    VPADStatus vs;
+    /* The GamePad: its touch screen is the stylus and wins over a Wii Remote.
+     * It samples faster than the frame rate, so every queued sample is read:
+     * button presses aren't missed, and a quick tap between two frames still
+     * counts (pressed now, released next frame). */
+    VPADStatus vs[16];
     VPADReadError verr = VPAD_READ_SUCCESS;
-    if (VPADRead(VPAD_CHAN_0, &vs, 1, &verr) > 0 && verr == VPAD_READ_SUCCESS) {
-        down |= map_vpad(vs.trigger);
-        held |= map_vpad(vs.hold);
-        VPADTouchData tp;
-        VPADGetTPCalibratedPoint(VPAD_CHAN_0, &tp, &vs.tpNormal);
-        if (tp.touched) {
+    int n = VPADRead(VPAD_CHAN_0, vs, 16, &verr);
+    if (touch_release) touch_down = touch_release = 0;
+    if (n > 0 && verr == VPAD_READ_SUCCESS) {
+        int touched = 0;
+        for (int i = n - 1; i >= 0; i--) { /* oldest first */
+            down |= map_vpad(vs[i].trigger);
+            VPADTouchData tp;
+            VPADGetTPCalibratedPoint(VPAD_CHAN_0, &tp, &vs[i].tpNormal);
+            if (!tp.touched) continue;
+            touched = 1;
             /* calibrated points are in 1280x720 regardless of the screen's size */
             if (!(tp.validity & VPAD_INVALID_X)) touch_x = tp.x * canvas_w / 1280;
             if (!(tp.validity & VPAD_INVALID_Y)) touch_y = tp.y * canvas_h / 720;
+        }
+        held |= map_vpad(vs[0].hold);
+        if (touched) {
             if (!touch_down) down |= BTN_A;
             touch_down = 1;
             touch_mode = 1;
+            touch_release = !vs[0].tpNormal.touched;
         } else {
             touch_down = 0;
         }

@@ -128,12 +128,15 @@ void autotest_apply(input_t *in)
     }
 pointer:
     in->held |= held_mask;
-    /* the script owns the pointer (the emulator would otherwise feed in the host mouse) */
-    in->pointer = pointing;
+    /* the script owns the Wii Remote pointer; GamePad touches (from the
+     * emulator's GamePad window) still come through */
     if (pointing) {
+        in->pointer = 1;
+        in->touch = 0;
         in->px = px;
         in->py = py;
-    } else {
+    } else if (!in->touch) {
+        in->pointer = 0;
         in->moved = 0;
     }
 }
