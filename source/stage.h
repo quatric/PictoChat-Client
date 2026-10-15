@@ -1,5 +1,5 @@
 #pragma once
-#include <gctypes.h>
+#include "platform.h"
 #include "gfx.h"
 
 /* The two DS screens, stacked as on pict.chat: a 256x384 canvas in DS pixels,

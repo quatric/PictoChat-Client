@@ -1,5 +1,5 @@
 #pragma once
-#include <gctypes.h>
+#include "platform.h"
 
 /* PictoChat Online's protocol (github.com/ayunami2000/ayunpictojava): JSON
  * text frames over a WebSocket, plus "ping"/"pong" keep-alives. */

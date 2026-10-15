@@ -1,5 +1,5 @@
 #pragma once
-#include <gctypes.h>
+#include "platform.h"
 
 typedef struct {
     char name[16];

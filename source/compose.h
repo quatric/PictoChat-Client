@@ -1,5 +1,5 @@
 #pragma once
-#include <gctypes.h>
+#include "platform.h"
 #include "chat.h"
 
 /* The bottom screen in a room: the drawing box, the keyboards and the tools,

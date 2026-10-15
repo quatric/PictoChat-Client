@@ -2,29 +2,32 @@
 #include <string.h>
 #include <math.h>
 #include <malloc.h>
+#include <SDL2/SDL.h>
 #include "gfx.h"
 #include "image.h"
 #include "pointer_png.h"
 
-int SW = 640, SH = 480;
+/* The canvas is the Wii's 16:9 picture, 852x480: the GamePad shows it at its
+ * own size (854x480) and the TV at 1280x720. One SDL window is copied to both. */
+#define WIN_W 1280
+#define WIN_H 720
+
+int SW = 852, SH = 480;
 u32 *canvas;
 
-static GXRModeObj *rmode;
-static void *xfb[2];
-static int which;
-static int wide;
+static SDL_Window *window;
+static SDL_Renderer *renderer;
 static int clip_x0, clip_y0, clip_x1, clip_y1;
 static int canvas_dirty = 1;
 
-/* GX draws the canvas, the layer on top of it and the pointer as textured
- * quads; it also does the scaling (16:9 squeeze, layer zoom) and the TV copy. */
-#define FIFO_SIZE (256 * 1024)
-static void *fifo;
-static u16 *canvas_tex;
-static u16 *layer_tex;
+/* The GPU draws the canvas, the layer on top of it and the pointer as textures;
+ * it also does the scaling (layer zoom, TV and GamePad sizes). */
+static SDL_Texture *canvas_tex;
+static SDL_Texture *layer_tex;
+static u32 *layer_px;
 static int layer_w, layer_h, layer_on;
 static float layer_x, layer_y, layer_dw, layer_dh;
-static u8 *pointer_tex;
+static SDL_Texture *pointer_tex;
 static int pointer_tw, pointer_th;
 
 #define R(c) (((c) >> 16) & 0xFF)
@@ -33,81 +36,34 @@ static int pointer_tw, pointer_th;
 
 void gfx_init(void)
 {
-    VIDEO_Init();
-    rmode = VIDEO_GetPreferredMode(NULL);
-    wide = CONF_GetAspectRatio() == CONF_ASPECT_16_9;
-    if (wide) { /* use the full width of a 16:9 picture */
-        rmode->viWidth = 678;
-        rmode->viXOrigin = (VI_MAX_WIDTH_NTSC - rmode->viWidth) / 2;
-    }
+    window = SDL_CreateWindow("PictoChat", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIN_W, WIN_H, 0);
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    SDL_RenderSetScale(renderer, (float)WIN_W / SW, (float)WIN_H / SH);
 
-    SW = wide ? 852 : 640;
-    SH = 480;
     canvas = memalign(32, SW * SH * 4);
     memset(canvas, 0, SW * SH * 4);
-    canvas_tex = memalign(32, SW * SH * 2);
-
-    for (int i = 0; i < 2; i++) {
-        xfb[i] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
-        VIDEO_ClearFrameBuffer(rmode, xfb[i], COLOR_BLACK);
-    }
-    VIDEO_Configure(rmode);
-    VIDEO_SetNextFramebuffer(xfb[0]);
-    VIDEO_SetBlack(FALSE);
-    VIDEO_Flush();
-    VIDEO_WaitVSync();
-    if (rmode->viTVMode & VI_NON_INTERLACE) VIDEO_WaitVSync();
-
-    fifo = memalign(32, FIFO_SIZE);
-    memset(fifo, 0, FIFO_SIZE);
-    GX_Init(fifo, FIFO_SIZE);
-    GX_SetCopyClear((GXColor){ 0, 0, 0, 255 }, GX_MAX_Z24);
-    GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
-    f32 yscale = GX_GetYScaleFactor(rmode->efbHeight, rmode->xfbHeight);
-    u32 xfb_height = GX_SetDispCopyYScale(yscale);
-    GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
-    GX_SetDispCopySrc(0, 0, rmode->fbWidth, rmode->efbHeight);
-    GX_SetDispCopyDst(rmode->fbWidth, xfb_height);
-    GX_SetCopyFilter(rmode->aa, rmode->sample_pattern, GX_TRUE, rmode->vfilter);
-    GX_SetFieldMode(rmode->field_rendering, rmode->viHeight == 2 * rmode->xfbHeight ? GX_ENABLE : GX_DISABLE);
-    GX_SetPixelFmt(rmode->aa ? GX_PF_RGB565_Z16 : GX_PF_RGB8_Z24, GX_ZC_LINEAR);
-    GX_SetCullMode(GX_CULL_NONE);
-    GX_SetDispCopyGamma(GX_GM_1_0);
-
-    Mtx44 proj;
-    guOrtho(proj, 0, SH, 0, SW, 0, 1); /* canvas pixels; GX squeezes 852 into the 16:9 picture */
-    GX_LoadProjectionMtx(proj, GX_ORTHOGRAPHIC);
-    Mtx view;
-    guMtxIdentity(view);
-    GX_LoadPosMtxImm(view, GX_PNMTX0);
-    GX_ClearVtxDesc();
-    GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
-    GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
-    GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XY, GX_F32, 0);
-    GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0);
-    GX_SetNumChans(0);
-    GX_SetNumTexGens(1);
-    GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
-    GX_SetNumTevStages(1);
-    GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLORNULL);
-    GX_SetTevOp(GX_TEVSTAGE0, GX_REPLACE);
-    GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
-    GX_SetZMode(GX_FALSE, GX_ALWAYS, GX_FALSE);
-    GX_SetAlphaUpdate(GX_TRUE);
-    GX_SetColorUpdate(GX_TRUE);
+    /* canvas pixels are 0x00RRGGBB; they are uploaded with an opaque alpha byte */
+    canvas_tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, SW, SH);
+    SDL_SetTextureBlendMode(canvas_tex, SDL_BLENDMODE_NONE);
+    SDL_SetTextureScaleMode(canvas_tex, SDL_ScaleModeLinear);
     gfx_noclip();
 }
 
 void gfx_shutdown(void)
 {
-    GX_DrawDone();
-    GX_AbortFrame();
-    VIDEO_SetBlack(TRUE);
-    VIDEO_Flush();
-    VIDEO_WaitVSync();
+    if (pointer_tex) SDL_DestroyTexture(pointer_tex);
+    if (layer_tex) SDL_DestroyTexture(layer_tex);
+    if (canvas_tex) SDL_DestroyTexture(canvas_tex);
+    pointer_tex = layer_tex = canvas_tex = NULL;
+    free(layer_px);
+    layer_px = NULL;
+    if (renderer) SDL_DestroyRenderer(renderer);
+    if (window) SDL_DestroyWindow(window);
+    renderer = NULL;
+    window = NULL;
 }
 
-int gfx_widescreen(void) { return wide; }
+int gfx_widescreen(void) { return 1; }
 
 /* ── Cursor ──────────────────────────────────────────────────────────────── */
 /* The Wii pointer hand (Player 1) from PrimmR's Wii Pointer Cursors, https://primmr.dev/projects/wii-pointer-cursors/ */
@@ -117,64 +73,10 @@ int gfx_widescreen(void) { return wide; }
 static image_t *pointer_img;
 static int pointer_tried;
 
-
-static inline u16 rgb565(u32 c) { return ((c >> 8) & 0xF800) | ((c >> 5) & 0x07E0) | ((c >> 3) & 0x001F); }
-
-/* 0xRRGGBB pixels -> GX RGB565 texture (4x4 tiles) */
-static void to_rgb565(const u32 *src, int w, int h, u16 *dst)
+static void draw_texture(SDL_Texture *tex, float x, float y, float dw, float dh)
 {
-    u16 *out = dst;
-    for (int by = 0; by < h; by += 4)
-        for (int bx = 0; bx < w; bx += 4)
-            for (int y = by; y < by + 4; y++) {
-                const u32 *p = src + y * w + bx;
-                out[0] = rgb565(p[0]);
-                out[1] = rgb565(p[1]);
-                out[2] = rgb565(p[2]);
-                out[3] = rgb565(p[3]);
-                out += 4;
-            }
-    DCFlushRange(dst, w * h * 2);
-}
-
-/* The same at twice the size: each 4x4 tile holds 2x2 source pixels */
-static void to_rgb565_2x(const u32 *src, int w, int h, u16 *dst, u16 inv)
-{
-    u16 *out = dst;
-    for (int sy = 0; sy < h; sy += 2)
-        for (int sx = 0; sx < w; sx += 2) {
-            const u32 *p = src + sy * w + sx;
-            u16 a = rgb565(p[0]) ^ inv, b = rgb565(p[1]) ^ inv, c = rgb565(p[w]) ^ inv, d = rgb565(p[w + 1]) ^ inv;
-            out[0] = out[1] = out[4] = out[5] = a;
-            out[2] = out[3] = out[6] = out[7] = b;
-            out[8] = out[9] = out[12] = out[13] = c;
-            out[10] = out[11] = out[14] = out[15] = d;
-            out += 16;
-        }
-    DCFlushRange(dst, w * h * 8);
-}
-
-static void quad(float x, float y, float w, float h)
-{
-    GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
-    GX_Position2f32(x, y);
-    GX_TexCoord2f32(0, 0);
-    GX_Position2f32(x + w, y);
-    GX_TexCoord2f32(1, 0);
-    GX_Position2f32(x + w, y + h);
-    GX_TexCoord2f32(1, 1);
-    GX_Position2f32(x, y + h);
-    GX_TexCoord2f32(0, 1);
-    GX_End();
-}
-
-static void draw_texture(void *data, int w, int h, u8 format, int linear, float x, float y, float dw, float dh)
-{
-    GXTexObj tex;
-    GX_InitTexObj(&tex, data, w, h, format, GX_CLAMP, GX_CLAMP, GX_FALSE);
-    GX_InitTexObjLOD(&tex, linear ? GX_LINEAR : GX_NEAR, linear ? GX_LINEAR : GX_NEAR, 0, 0, 0, GX_FALSE, GX_FALSE, GX_ANISO_1);
-    GX_LoadTexObj(&tex, GX_TEXMAP0);
-    quad(x, y, dw, dh);
+    SDL_FRect dst = { x, y, dw, dh };
+    SDL_RenderCopyF(renderer, tex, NULL, &dst);
 }
 
 static void pointer_texture(void)
@@ -188,27 +90,13 @@ static void pointer_texture(void)
         }
     }
     if (pointer_tex || !pointer_img) return;
-    pointer_tw = (pointer_img->w + 3) & ~3;
-    pointer_th = (pointer_img->h + 3) & ~3;
-    pointer_tex = memalign(32, pointer_tw * pointer_th * 4);
-    /* RGBA8: each 4x4 tile is 32 bytes of AR pairs, then 32 bytes of GB pairs */
-    u8 *out = pointer_tex;
-    for (int by = 0; by < pointer_th; by += 4)
-        for (int bx = 0; bx < pointer_tw; bx += 4) {
-            for (int y = by; y < by + 4; y++)
-                for (int x = bx; x < bx + 4; x++) {
-                    u32 c = x < pointer_img->w && y < pointer_img->h ? pointer_img->px[y * pointer_img->w + x] : 0;
-                    *out++ = c >> 24;
-                    *out++ = c >> 16;
-                }
-            for (int y = by; y < by + 4; y++)
-                for (int x = bx; x < bx + 4; x++) {
-                    u32 c = x < pointer_img->w && y < pointer_img->h ? pointer_img->px[y * pointer_img->w + x] : 0;
-                    *out++ = c >> 8;
-                    *out++ = c;
-                }
-        }
-    DCFlushRange(pointer_tex, pointer_tw * pointer_th * 4);
+    pointer_tw = pointer_img->w;
+    pointer_th = pointer_img->h;
+    pointer_tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, pointer_tw, pointer_th);
+    if (!pointer_tex) return;
+    SDL_UpdateTexture(pointer_tex, NULL, pointer_img->px, pointer_tw * 4);
+    SDL_SetTextureBlendMode(pointer_tex, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(pointer_tex, SDL_ScaleModeLinear);
 }
 
 void gfx_canvas_changed(void) { canvas_dirty = 1; }
@@ -220,14 +108,33 @@ void gfx_layer(const u32 *px, int w, int h, float x, float y, float dw, float dh
         return;
     }
     if (!layer_tex || layer_w != w || layer_h != h) {
-        free(layer_tex);
-        layer_tex = memalign(32, w * 2 * h * 2 * 2);
+        if (layer_tex) SDL_DestroyTexture(layer_tex);
+        free(layer_px);
+        layer_tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w * 2, h * 2);
+        layer_px = malloc(w * 2 * h * 2 * 4);
+        if (!layer_tex || !layer_px) {
+            layer_on = 0;
+            layer_w = layer_h = 0;
+            return;
+        }
+        SDL_SetTextureBlendMode(layer_tex, SDL_BLENDMODE_NONE);
+        SDL_SetTextureScaleMode(layer_tex, SDL_ScaleModeLinear);
         layer_w = w;
         layer_h = h;
     }
-    /* doubled with nearest, then scaled down by GX with linear filtering:
+    /* doubled with nearest, then scaled by the GPU with linear filtering:
      * sharp pixels without the uneven widths of plain nearest scaling */
-    to_rgb565_2x(px, w, h, layer_tex, invert ? 0xFFFF : 0);
+    u32 inv = invert ? 0xFFFFFF : 0;
+    int dst_w = w * 2;
+    for (int y = 0; y < h; y++) {
+        const u32 *s = px + y * w;
+        u32 *d0 = layer_px + y * 2 * dst_w, *d1 = d0 + dst_w;
+        for (int x = 0; x < w; x++) {
+            u32 c = (s[x] ^ inv) | 0xFF000000;
+            d0[x * 2] = d0[x * 2 + 1] = d1[x * 2] = d1[x * 2 + 1] = c;
+        }
+    }
+    SDL_UpdateTexture(layer_tex, NULL, layer_px, dst_w * 4);
     layer_on = 1;
     layer_x = x;
     layer_y = y;
@@ -235,59 +142,60 @@ void gfx_layer(const u32 *px, int w, int h, float x, float y, float dw, float dh
     layer_dh = dh;
 }
 
+#ifdef AUTOTEST
+/* Screenshots: the canvas with the layer scaled in (nearest), as the TV shows it */
+static void autotest_compose(void)
+{
+    extern int autotest_shot_pending(void);
+    extern void autotest_save(const u32 *px, int w, int h);
+    if (!autotest_shot_pending()) return;
+    u32 *rgb = malloc(SW * SH * 4);
+    if (!rgb) return;
+    memcpy(rgb, canvas, SW * SH * 4);
+    if (layer_on && layer_dw > 0 && layer_dh > 0) {
+        int lw = layer_w * 2;
+        for (int y = 0; y < (int)layer_dh; y++) {
+            int yy = (int)layer_y + y;
+            if (yy < 0 || yy >= SH) continue;
+            const u32 *row = layer_px + (int)(y * layer_h * 2 / layer_dh) * lw;
+            for (int x = 0; x < (int)layer_dw; x++) {
+                int xx = (int)layer_x + x;
+                if (xx >= 0 && xx < SW) rgb[yy * SW + xx] = row[(int)(x * lw / layer_dw)];
+            }
+        }
+    }
+    autotest_save(rgb, SW, SH);
+    free(rgb);
+}
+#endif
+
 void gfx_present(int cursor, int cx, int cy)
 {
     if (canvas_dirty) {
-        to_rgb565(canvas, SW, SH, canvas_tex);
+        void *dst;
+        int pitch;
+        if (!SDL_LockTexture(canvas_tex, NULL, &dst, &pitch)) {
+            for (int y = 0; y < SH; y++) {
+                const u32 *s = canvas + y * SW;
+                u32 *d = (u32 *)((u8 *)dst + y * pitch);
+                for (int x = 0; x < SW; x++) d[x] = s[x] | 0xFF000000;
+            }
+            SDL_UnlockTexture(canvas_tex);
+        }
         canvas_dirty = 0;
     }
-    GX_InvalidateTexAll();
-    draw_texture(canvas_tex, SW, SH, GX_TF_RGB565, 1, 0, 0, SW, SH);
-    if (layer_on) draw_texture(layer_tex, layer_w * 2, layer_h * 2, GX_TF_RGB565, 1, layer_x, layer_y, layer_dw, layer_dh);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+    draw_texture(canvas_tex, 0, 0, SW, SH);
+    if (layer_on) draw_texture(layer_tex, layer_x, layer_y, layer_dw, layer_dh);
     if (cursor) {
         pointer_texture();
-        if (pointer_tex)
-            draw_texture(pointer_tex, pointer_tw, pointer_th, GX_TF_RGBA8, 1, cx - CURSOR_HOT_X, cy - CURSOR_HOT_Y,
-                         pointer_tw, pointer_th);
+        if (pointer_tex) draw_texture(pointer_tex, cx - CURSOR_HOT_X, cy - CURSOR_HOT_Y, pointer_tw, pointer_th);
     }
-    GX_DrawDone();
-
-    which ^= 1;
-    GX_SetZMode(GX_FALSE, GX_ALWAYS, GX_FALSE);
-    GX_SetColorUpdate(GX_TRUE);
-    GX_CopyDisp(xfb[which], GX_TRUE);
-    GX_Flush();
 #ifdef AUTOTEST
-    {
-        /* screenshots show exactly what goes to the TV */
-        extern int autotest_shot_pending(void);
-        extern void autotest_save(const u32 *px, int w, int h);
-        if (autotest_shot_pending()) {
-            GX_DrawDone();
-            int w = rmode->fbWidth, h = rmode->xfbHeight;
-            u32 *rgb = malloc(w * h * 4);
-            const u32 *yuv = xfb[which];
-            for (int i = 0; rgb && i < w * h / 2; i++) {
-                u32 v = yuv[i];
-                int y1 = v >> 24, cb = (v >> 16) & 255, y2 = (v >> 8) & 255, cr = v & 255;
-                for (int k = 0; k < 2; k++) {
-                    int yy = (k ? y2 : y1) - 16;
-                    int r = (298 * yy + 409 * (cr - 128) + 128) >> 8;
-                    int g = (298 * yy - 100 * (cb - 128) - 208 * (cr - 128) + 128) >> 8;
-                    int bl = (298 * yy + 516 * (cb - 128) + 128) >> 8;
-                    r = r < 0 ? 0 : r > 255 ? 255 : r;
-                    g = g < 0 ? 0 : g > 255 ? 255 : g;
-                    bl = bl < 0 ? 0 : bl > 255 ? 255 : bl;
-                    rgb[i * 2 + k] = r << 16 | g << 8 | bl;
-                }
-            }
-            if (rgb) autotest_save(rgb, w, h);
-            free(rgb);
-        }
-    }
+    autotest_compose();
 #endif
-    VIDEO_SetNextFramebuffer(xfb[which]);
-    VIDEO_Flush();
+    SDL_RenderPresent(renderer);
 }
 
 /* ── Primitives ──────────────────────────────────────────────────────────── */

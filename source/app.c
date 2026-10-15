@@ -4,8 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <gccore.h>
-#include <ogc/lwp_watchdog.h>
+#include "platform.h"
 #include "app.h"
 #include "assets.h"
 #include "chat.h"
@@ -111,7 +110,7 @@ static void begin_connect(void)
 {
     if (net_ok != 0) net_ok = net_start(net_ip, sizeof net_ip);
     if (net_ok != 0) {
-        snprintf(status, sizeof status, "The Wii is not connected to the Internet.");
+        snprintf(status, sizeof status, "The Wii U is not connected to the Internet.");
         sound_play(SND_ERROR);
         screen = SCR_SETUP;
         return;
@@ -445,13 +444,13 @@ static void handle_keyboard(void)
 
 static void handle_input(const input_t *in)
 {
-    /* the pointer: Wii Remote or mouse; otherwise the D-Pad steers a cursor */
+    /* the pointer: GamePad touch or Wii Remote; otherwise the D-Pad steers a cursor */
     if (in->pointer) {
         cur_x = in->px;
         cur_y = in->py;
-        cursor_visible = 1;
+        cursor_visible = !in->touch; /* a finger needs no hand on the screen */
         virtual_cursor = 0;
-    } else if (in->held & BTN_DIRS) {
+    } else if ((in->held & BTN_DIRS) && !in->touch_mode) {
         static int speed;
         speed = speed < 12 ? speed + 1 : 12;
         int step = 2 + speed / 2;
@@ -475,13 +474,14 @@ static void handle_input(const input_t *in)
         if (cur_x >= SW) cur_x = SW - 1;
         if (cur_y >= SH) cur_y = SH - 1;
         cursor_visible = 1;
-    } else if (!virtual_cursor) {
+    } else if (!virtual_cursor || in->touch_mode) {
         cursor_visible = 0;
+        virtual_cursor = 0;
     }
 
     float sx, sy;
     stage_from_canvas(cur_x, cur_y, &sx, &sy);
-    if ((in->down & BTN_A) && cursor_visible) {
+    if ((in->down & BTN_A) && (cursor_visible || in->touch)) {
         touching = 1;
         touch_x = sx;
         touch_y = sy;
@@ -521,7 +521,7 @@ static void handle_input(const input_t *in)
             screen = SCR_SETUP;
         }
         if (in->down & BTN_2) cycle_zoom();
-        if (in->pointer && (in->down & (BTN_UP | BTN_DOWN))) {
+        if ((in->pointer || in->touch_mode) && (in->down & (BTN_UP | BTN_DOWN))) {
             room_shift_target = (in->down & BTN_DOWN) ? 32 : 0;
             sound_play(SND_SCROLL);
         }
@@ -540,10 +540,10 @@ static void handle_input(const input_t *in)
         }
         if (in->down & BTN_1) compose_next_keyboard();
         if (in->down & BTN_2) cycle_zoom();
-        if (in->pointer && (in->down & BTN_UP)) log_scroll(-1), sound_play(SND_SCROLL);
-        if (in->pointer && (in->down & BTN_DOWN)) log_scroll(1), sound_play(SND_SCROLL);
-        if (in->pointer && (in->down & BTN_LEFT)) compose_toggle_pen_size();
-        if (in->pointer && (in->down & BTN_RIGHT)) compose_toggle_pen_mode();
+        if ((in->pointer || in->touch_mode) && (in->down & BTN_UP)) log_scroll(-1), sound_play(SND_SCROLL);
+        if ((in->pointer || in->touch_mode) && (in->down & BTN_DOWN)) log_scroll(1), sound_play(SND_SCROLL);
+        if ((in->pointer || in->touch_mode) && (in->down & BTN_LEFT)) compose_toggle_pen_size();
+        if ((in->pointer || in->touch_mode) && (in->down & BTN_RIGHT)) compose_toggle_pen_mode();
         break;
     case SCR_CLOSED:
         if (in->down & (BTN_A | BTN_B | BTN_PLUS)) screen = SCR_SETUP;
@@ -570,7 +570,7 @@ static void draw_setup(void)
     stage_blit(img[IMG_INTRO_BG], 0, 0, 0xFFFFFF, 255);
     if (img[IMG_LOGO]) stage_blit(img[IMG_LOGO], (STAGE_W - img[IMG_LOGO]->w) / 2, 22, 0xFFFFFF, 255);
     stage_flip(1);
-    center(76, 0x000000, "PictoChat Online for Wii");
+    center(76, 0x000000, "PictoChat Online for Wii U");
     center(100, 0x404040, "Public rooms are public and logged.");
     center(114, 0x404040, "Flagged messages go to moderators.");
     center(128, 0x404040, "Don't share private info. Be kind!");
@@ -756,7 +756,7 @@ static void draw_loading(void)
 {
     gfx_fill(0, 0, SW, SH, 0xE8E8E8);
     int p = assets_progress();
-    text_draw_center(FONT_REGULAR, 26, 0, SH / 2 - 70, SW, 0x202020, "PictoChat for Wii");
+    text_draw_center(FONT_REGULAR, 26, 0, SH / 2 - 70, SW, 0x202020, "PictoChat for Wii U");
     if (p < 0) {
         int starts[4], lens[4];
         const char *e = assets_error();
@@ -774,12 +774,12 @@ static void draw_loading(void)
 
 /* Control hints: pairs of button and action */
 static const char *const ROOM_HINTS[] = {
-    "A", "Touch / draw", "B", "Backspace", "+", "Send", "-", "Clear", "1", "Keyboard", "2", "Zoom",
+    "Touch", "Draw / type", "B", "Backspace", "+", "Send", "-", "Clear", "Y / 1", "Keyboard", "X / 2", "Zoom",
     "Up/Down", "Scroll", "HOME", "Leave",
 };
-static const char *const LOBBY_HINTS[] = { "A", "Select", "2", "Zoom", "B", "Back", "HOME", "Back" };
-static const char *const MENU_HINTS[] = { "A", "Select", "B", "Back", "HOME", "Quit" };
-static const char *const SETUP_HINTS[] = { "A", "Select", "+", "Join", "1", "Dark Mode", "HOME", "Quit" };
+static const char *const LOBBY_HINTS[] = { "Touch", "Select", "X / 2", "Zoom", "B", "Back", "HOME", "Back" };
+static const char *const MENU_HINTS[] = { "Touch", "Select", "B", "Back", "HOME", "Quit" };
+static const char *const SETUP_HINTS[] = { "Touch", "Select", "+", "Join", "Y / 1", "Dark Mode", "HOME", "Quit" };
 
 static const char *const *hints_for_screen(int *count)
 {
@@ -1069,7 +1069,7 @@ void app_run(void)
 #ifdef AUTOTEST
         if (autotest_quit) break;
 #endif
-        VIDEO_WaitVSync();
+        if (input_quit_requested()) break; /* gfx_present waited for the vertical blank */
     }
     TLOG("quit: pairing");
     pair_cancel();

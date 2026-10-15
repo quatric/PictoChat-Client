@@ -1,5 +1,5 @@
 #pragma once
-#include <gccore.h>
+#include "platform.h"
 
 /* Software canvas, presented to the TV through the external framebuffer.
  * Colors are 0xRRGGBB; images are 0xAARRGGBB. In 16:9 mode the canvas is

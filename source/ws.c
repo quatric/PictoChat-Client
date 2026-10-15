@@ -2,8 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <gccore.h>
-#include <ogc/lwp_watchdog.h>
+#include "platform.h"
 #include "ws.h"
 #include "net.h"
 #include "util.h"
@@ -18,8 +17,10 @@ typedef struct msg {
     char data[];
 } msg_t;
 
-static lwp_t thread = LWP_THREAD_NULL;
-static mutex_t lock = LWP_MUTEX_NULL;
+static pthread_t thread;
+static int thread_running;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static int lock_ready;
 static volatile int running;
 static volatile ws_state_t state = WS_IDLE;
 static char error[192];
@@ -29,22 +30,22 @@ static msg_t *out_head, *out_tail, *in_head, *in_tail;
 static void push(msg_t **head, msg_t **tail, msg_t *m)
 {
     m->next = NULL;
-    LWP_MutexLock(lock);
+    pthread_mutex_lock(&lock);
     if (*tail) (*tail)->next = m;
     else *head = m;
     *tail = m;
-    LWP_MutexUnlock(lock);
+    pthread_mutex_unlock(&lock);
 }
 
 static msg_t *pop(msg_t **head, msg_t **tail)
 {
-    LWP_MutexLock(lock);
+    pthread_mutex_lock(&lock);
     msg_t *m = *head;
     if (m) {
         *head = m->next;
         if (!*head) *tail = NULL;
     }
-    LWP_MutexUnlock(lock);
+    pthread_mutex_unlock(&lock);
     return m;
 }
 
@@ -110,7 +111,7 @@ static int handshake(net_conn *c, const char *host, const char *path, unsigned c
     int n = snprintf(req, sizeof req,
                      "GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                      "Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\nOrigin: %s\r\n"
-                     "User-Agent: PictoChatWii/" APP_VERSION "\r\n\r\n",
+                     "User-Agent: PictoChatWiiU/" APP_VERSION "\r\n\r\n",
                      path, host, key ? key : "", origin);
     free(key);
     if (net_conn_write(c, req, n) < 0) {
@@ -273,15 +274,15 @@ done:
 void ws_open(const char *u, const char *o)
 {
     ws_close();
-    if (lock == LWP_MUTEX_NULL) LWP_MutexInit(&lock, false);
+    lock_ready = 1;
     snprintf(url, sizeof url, "%s", u);
     snprintf(origin, sizeof origin, "%s", o);
     error[0] = 0;
     srand(gettime());
     running = 1;
     state = WS_CONNECTING;
-    if (LWP_CreateThread(&thread, ws_thread, NULL, NULL, 64 * 1024, 60) < 0) {
-        thread = LWP_THREAD_NULL;
+    thread_running = thread_start(&thread, ws_thread, 128 * 1024) == 0;
+    if (!thread_running) {
         snprintf(error, sizeof error, "Could not start the network thread.");
         state = WS_CLOSED;
     }
@@ -290,11 +291,11 @@ void ws_open(const char *u, const char *o)
 void ws_close(void)
 {
     running = 0;
-    if (thread != LWP_THREAD_NULL) {
-        LWP_JoinThread(thread, NULL);
-        thread = LWP_THREAD_NULL;
+    if (thread_running) {
+        pthread_join(thread, NULL);
+        thread_running = 0;
     }
-    if (lock != LWP_MUTEX_NULL) {
+    if (lock_ready) {
         drain(&out_head, &out_tail);
         drain(&in_head, &in_tail);
     }
@@ -316,7 +317,7 @@ int ws_send(const char *text)
 
 char *ws_recv(void)
 {
-    if (lock == LWP_MUTEX_NULL) return NULL;
+    if (!lock_ready) return NULL;
     msg_t *m = pop(&in_head, &in_tail);
     if (!m) return NULL;
     char *text = malloc(m->len + 1);

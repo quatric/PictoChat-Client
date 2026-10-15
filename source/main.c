@@ -1,8 +1,7 @@
-/* PictoChat for Wii — a Homebrew Channel client for PictoChat Online (https://pict.chat). */
+/* PictoChat for Wii U — a Wii U homebrew client for PictoChat Online (https://pict.chat). */
 #include <stdlib.h>
-#include <gccore.h>
-#include <fat.h>
-#include <ogc/lwp_watchdog.h>
+#include <SDL2/SDL.h>
+#include "platform.h"
 #include "app.h"
 #include "font.h"
 #include "gfx.h"
@@ -12,22 +11,24 @@
 
 int main(int argc, char **argv)
 {
-#ifdef AUTOTEST
-    SYS_STDIO_Report(true);
-#endif
+    (void)argc;
+    (void)argv;
+    /* SDL runs ProcUI, the TV and GamePad pictures, audio and the USB keyboard;
+     * controllers are read directly (input.c), so its joystick driver stays off */
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
     gfx_init();
     input_init();
     input_set_canvas(SW, SH);
-    fatInitDefault();
-    settings_load(argc > 0 ? argv[0] : NULL);
+    settings_load(NULL);
     font_init();
     sound_init();
-    srand(gettime());
+    srand((unsigned)gettime());
 
     app_run();
 
     sound_shutdown();
     input_shutdown();
     gfx_shutdown();
+    SDL_Quit(); /* back to the Wii U Menu */
     return 0;
 }

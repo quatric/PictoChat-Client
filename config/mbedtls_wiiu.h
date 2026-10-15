@@ -1,9 +1,9 @@
-/* Minimal mbedTLS 3.6 configuration for PictoCard on the Wii: a TLS 1.2
+/* Minimal mbedTLS 3.6 configuration for PictoChat on the Wii U: a TLS 1.2
  * client with ECDHE key exchange, AES-GCM / ChaCha20-Poly1305, and X.509
  * chain verification against the roots in source/certs.h.
  *
  * Certificate dates are not checked (MBEDTLS_HAVE_TIME_DATE is off) because
- * many Wii consoles have a wrong clock; the chain and host name still are. */
+ * many consoles have a wrong clock; the chain and host name still are. */
 #ifndef PICTOCARD_MBEDTLS_CONFIG_H
 #define PICTOCARD_MBEDTLS_CONFIG_H
 

@@ -1,11 +1,12 @@
 /* Test builds only (make AUTOTEST=1): replays sd:/autotest.txt as controller
  * and keyboard input and saves screenshots to sd:/shots/, so the whole app
- * can be exercised in Dolphin without a person at the controls. */
+ * can be exercised in Cemu without a person at the controls. */
 #ifdef AUTOTEST
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include "platform.h"
 #include "input.h"
 #include "gfx.h"
 
@@ -26,9 +27,9 @@ void autotest_push_key(u8 code, char ch);
 
 static void save_shot(const char *name, const u32 *px, int SW, int SH)
 {
-    mkdir("sd:/shots", 0777);
+    mkdir(SD_ROOT "/shots", 0777);
     char path[128];
-    snprintf(path, sizeof path, "sd:/shots/%s.bmp", name);
+    snprintf(path, sizeof path, SD_ROOT "/shots/%s.bmp", name);
     FILE *f = fopen(path, "wb");
     if (!f) return;
     int row = (SW * 3 + 3) & ~3, size = 54 + row * SH;
@@ -71,7 +72,7 @@ void autotest_apply(input_t *in)
         static int tried;
         if (tried) goto pointer;
         tried = 1;
-        script = fopen("sd:/autotest.txt", "r");
+        script = fopen(SD_ROOT "/autotest.txt", "r");
         if (!script) return;
     }
     if (wait_frames > 0) {
@@ -127,7 +128,7 @@ void autotest_apply(input_t *in)
     }
 pointer:
     in->held |= held_mask;
-    /* the script owns the pointer (Dolphin would otherwise feed in the host mouse) */
+    /* the script owns the pointer (the emulator would otherwise feed in the host mouse) */
     in->pointer = pointing;
     if (pointing) {
         in->px = px;
@@ -142,7 +143,7 @@ pointer:
 #include <stdarg.h>
 void autotest_log(const char *fmt, ...)
 {
-    FILE *f = fopen("sd:/pictochat-log.txt", "a");
+    FILE *f = fopen(SD_ROOT "/pictochat-log.txt", "a");
     if (!f) {
         printf("(no sd) ");
         f = fopen("/dev/null", "w");

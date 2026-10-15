@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <malloc.h>
-#include <gccore.h>
+#include "platform.h"
 #include "assets.h"
 #include "image.h"
 #include "embedded.h"
@@ -32,9 +32,10 @@ static size_t font_size;
 
 static volatile int done_count, failed;
 static char error[192];
-static lwp_t thread = LWP_THREAD_NULL;
+static pthread_t thread;
+static int thread_running;
 
-/* ASND wants 32-byte aligned buffers whose length is a multiple of 32 */
+/* whole stereo frames, in their own buffer so 16-bit reads are aligned */
 static short *aligned_pcm(const unsigned char *data, size_t len, size_t *bytes)
 {
     size_t size = (len + 31) & ~31;
@@ -42,7 +43,6 @@ static short *aligned_pcm(const unsigned char *data, size_t len, size_t *bytes)
     if (!pcm) return NULL;
     memset(pcm, 0, size);
     memcpy(pcm, data, len);
-    DCFlushRange(pcm, size);
     *bytes = size;
     return pcm;
 }
@@ -75,15 +75,19 @@ void assets_start(void)
     done_count = 0;
     failed = 0;
     error[0] = 0;
-    LWP_CreateThread(&thread, loader, NULL, NULL, 64 * 1024, 50);
+    thread_running = thread_start(&thread, loader, 128 * 1024) == 0;
+    if (!thread_running) {
+        failed = 1;
+        done_count = TOTAL;
+    }
 }
 
 int assets_progress(void)
 {
     if (done_count >= TOTAL) {
-        if (thread != LWP_THREAD_NULL) {
-            LWP_JoinThread(thread, NULL);
-            thread = LWP_THREAD_NULL;
+        if (thread_running) {
+            pthread_join(thread, NULL);
+            thread_running = 0;
         }
         return failed ? -1 : 100;
     }

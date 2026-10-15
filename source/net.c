@@ -4,10 +4,16 @@
 #include <strings.h>
 #include <time.h>
 #include <errno.h>
-#include <gccore.h>
-#include <network.h>
+#include <unistd.h>
+#include <pthread.h>
 #include <poll.h>
-#include <ogc/lwp_watchdog.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <coreinit/time.h>
+#include <nn/ac.h>
+#include "platform.h"
 #include <mbedtls/ssl.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
@@ -28,7 +34,7 @@ static mbedtls_entropy_context entropy;
 static mbedtls_ctr_drbg_context drbg;
 static mbedtls_x509_crt cas;
 static mbedtls_ssl_config conf;
-static mutex_t tls_lock = LWP_MUTEX_NULL;
+static pthread_mutex_t tls_lock = PTHREAD_MUTEX_INITIALIZER;
 
 mbedtls_ms_time_t mbedtls_ms_time(void)
 {
@@ -38,22 +44,30 @@ mbedtls_ms_time_t mbedtls_ms_time(void)
 int net_start(char *ip, size_t ip_len)
 {
     if (!net_ready) {
-        int ret = -1;
-        for (int attempt = 0; attempt < 3 && ret < 0; attempt++) {
-            char addr[16] = "", mask[16] = "", gw[16] = "";
-            ret = if_config(addr, mask, gw, true, 20);
-            if (ret >= 0 && ip) snprintf(ip, ip_len, "%s", addr);
+        static int ac_ready;
+        if (!ac_ready) {
+            if (NNResult_IsFailure(ACInitialize())) return -1;
+            ac_ready = 1;
         }
-        if (ret < 0) return ret;
+        BOOL connected = FALSE;
+        ACIsApplicationConnected(&connected);
+        for (int attempt = 0; attempt < 3 && !connected; attempt++) {
+            if (NNResult_IsSuccess(ACConnect())) connected = TRUE;
+        }
+        if (!connected) return -1;
+        uint32_t addr = 0;
+        if (ip && NNResult_IsSuccess(ACGetAssignedAddress(&addr)))
+            snprintf(ip, ip_len, "%u.%u.%u.%u", (unsigned)(addr >> 24), (unsigned)(addr >> 16) & 255,
+                     (unsigned)(addr >> 8) & 255, (unsigned)addr & 255);
         net_ready = 1;
     }
     return 0;
 }
 
 /* ── Entropy ─────────────────────────────────────────────────────────────── */
-/* The Wii has no exposed hardware RNG; gather timing jitter from the CPU
+/* Homebrew has no hardware RNG to call; gather timing jitter from the CPU
  * timebase while doing memory work, which varies with bus and cache state. */
-static int wii_entropy(void *data, unsigned char *out, size_t len, size_t *olen)
+static int timing_entropy(void *data, unsigned char *out, size_t len, size_t *olen)
 {
     (void)data;
     static volatile u32 scratch[256];
@@ -78,12 +92,10 @@ static int tls_init(char *err, size_t err_len)
     mbedtls_ctr_drbg_init(&drbg);
     mbedtls_x509_crt_init(&cas);
     mbedtls_ssl_config_init(&conf);
-    mbedtls_entropy_add_source(&entropy, wii_entropy, NULL, 32, MBEDTLS_ENTROPY_SOURCE_STRONG);
+    mbedtls_entropy_add_source(&entropy, timing_entropy, NULL, 32, MBEDTLS_ENTROPY_SOURCE_STRONG);
 
-    u32 device = 0;
-    ES_GetDeviceID(&device);
     char personal[96];
-    snprintf(personal, sizeof personal, "PictoChat-Wii %u %llu %lld", device, (unsigned long long)gettime(),
+    snprintf(personal, sizeof personal, "PictoChat-WiiU %p %llu %lld", (void *)personal, (unsigned long long)gettime(),
              (long long)time(NULL));
     int ret = mbedtls_ctr_drbg_seed(&drbg, mbedtls_entropy_func, &entropy, (const unsigned char *)personal,
                                     strlen(personal));
@@ -104,8 +116,8 @@ static int tls_init(char *err, size_t err_len)
 
 static int wait_fd(int fd, int events)
 {
-    struct pollsd p = { .socket = fd, .events = events, .revents = 0 };
-    int ret = net_poll(&p, 1, TIMEOUT_MS);
+    struct pollfd p = { .fd = fd, .events = events, .revents = 0 };
+    int ret = poll(&p, 1, TIMEOUT_MS);
     if (ret == 0) return MBEDTLS_ERR_SSL_TIMEOUT;
     return ret < 0 ? ret : 0;
 }
@@ -114,8 +126,8 @@ static int sock_send(void *ctx, const unsigned char *buf, size_t len)
 {
     int fd = (int)(intptr_t)ctx;
     if (wait_fd(fd, POLLOUT) < 0) return MBEDTLS_ERR_SSL_TIMEOUT;
-    int ret = net_send(fd, buf, len > 16384 ? 16384 : len, 0);
-    if (ret == -EAGAIN) return MBEDTLS_ERR_SSL_WANT_WRITE;
+    int ret = send(fd, buf, len > 16384 ? 16384 : len, 0);
+    if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return MBEDTLS_ERR_SSL_WANT_WRITE;
     return ret < 0 ? ERR_SEND_FAILED : ret;
 }
 
@@ -124,8 +136,8 @@ static int sock_recv(void *ctx, unsigned char *buf, size_t len)
     int fd = (int)(intptr_t)ctx;
     int w = wait_fd(fd, POLLIN);
     if (w < 0) return MBEDTLS_ERR_SSL_TIMEOUT;
-    int ret = net_recv(fd, buf, len, 0);
-    if (ret == -EAGAIN) return MBEDTLS_ERR_SSL_WANT_READ;
+    int ret = recv(fd, buf, len, 0);
+    if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return MBEDTLS_ERR_SSL_WANT_READ;
     return ret < 0 ? ERR_RECV_FAILED : ret;
 }
 
@@ -213,37 +225,39 @@ static int conn_open(conn_t *c, int tls, const char *host, int port, char *err, 
     c->fd = -1;
     c->tls = tls;
     if (!net_ready) {
-        snprintf(err, err_len, "The Wii is not connected to the Internet.");
+        snprintf(err, err_len, "The Wii U is not connected to the Internet.");
         return -1;
     }
     if (tls) {
-        if (tls_lock == LWP_MUTEX_NULL) LWP_MutexInit(&tls_lock, false);
-        LWP_MutexLock(tls_lock);
+        pthread_mutex_lock(&tls_lock);
         int ret = tls_init(err, err_len);
-        LWP_MutexUnlock(tls_lock);
+        pthread_mutex_unlock(&tls_lock);
         if (ret < 0) return -1;
     }
 
-    struct hostent *he = net_gethostbyname(host);
-    if (!he || !he->h_addr_list || !he->h_addr_list[0]) {
+    /* getaddrinfo rather than gethostbyname: the latter also reads nsysnet's h_errno */
+    struct addrinfo hints, *ai = NULL;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, NULL, &hints, &ai) != 0 || !ai) {
         snprintf(err, err_len, "Could not find %s. Check the Internet connection.", host);
         return -1;
     }
     struct sockaddr_in sa;
-    memset(&sa, 0, sizeof sa);
-    sa.sin_family = AF_INET;
-    sa.sin_len = sizeof sa;
+    memcpy(&sa, ai->ai_addr, sizeof sa);
+    freeaddrinfo(ai);
     sa.sin_port = htons(port);
-    memcpy(&sa.sin_addr, he->h_addr_list[0], sizeof sa.sin_addr);
 
-    c->fd = net_socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    c->fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (c->fd < 0) {
-        snprintf(err, err_len, "Could not open a network connection (%d).", c->fd);
+        snprintf(err, err_len, "Could not open a network connection (%d).", -errno);
         return -1;
     }
-    int ret = net_connect(c->fd, (struct sockaddr *)&sa, sizeof sa);
+    int ret = connect(c->fd, (struct sockaddr *)&sa, sizeof sa);
     if (ret < 0) {
-        net_close(c->fd);
+        ret = -errno;
+        close(c->fd);
         c->fd = -1;
         snprintf(err, err_len, "Could not connect to %s (%d).", host, ret);
         return -1;
@@ -268,7 +282,7 @@ static int conn_open(conn_t *c, int tls, const char *host, int port, char *err, 
 
 fail:
     mbedtls_ssl_free(&c->ssl);
-    net_close(c->fd);
+    close(c->fd);
     c->fd = -1;
     return -1;
 }
@@ -280,7 +294,7 @@ static void conn_close(conn_t *c)
         mbedtls_ssl_close_notify(&c->ssl);
         mbedtls_ssl_free(&c->ssl);
     }
-    net_close(c->fd);
+    close(c->fd);
     c->fd = -1;
 }
 
@@ -302,7 +316,7 @@ int http_request(const char *method, const char *url, const char *content_type, 
     char *buf = NULL;
     char head[640];
     int n = snprintf(head, sizeof head,
-                     "%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: PictoChatWii/" APP_VERSION
+                     "%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: PictoChatWiiU/" APP_VERSION
                      "\r\nAccept: application/json\r\nConnection: close\r\n",
                      method, path, host);
     if (body) n += snprintf(head + n, sizeof head - n, "Content-Type: %s\r\nContent-Length: %u\r\n",
@@ -404,8 +418,8 @@ int net_conn_read(net_conn *c, void *buf, size_t len) { return conn_read(c, buf,
 int net_conn_wait(net_conn *c, int timeout_ms)
 {
     if (c->tls && mbedtls_ssl_get_bytes_avail(&c->ssl) > 0) return 1;
-    struct pollsd p = { .socket = c->fd, .events = POLLIN, .revents = 0 };
-    int ret = net_poll(&p, 1, timeout_ms);
+    struct pollfd p = { .fd = c->fd, .events = POLLIN, .revents = 0 };
+    int ret = poll(&p, 1, timeout_ms);
     if (ret < 0) return ret;
     return ret > 0 && (p.revents & (POLLIN | POLLHUP | POLLERR)) ? 1 : 0;
 }

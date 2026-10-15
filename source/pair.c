@@ -2,12 +2,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <gccore.h>
+#include "platform.h"
 #include "pair.h"
 #include "cJSON.h"
 #include "net.h"
 
-static lwp_t thread = LWP_THREAD_NULL;
+static pthread_t thread;
+static int thread_running;
 static volatile int cancelled;
 static volatile pair_state_t state = PAIR_IDLE;
 static char server[128], code[16], url[192], error[192];
@@ -100,8 +101,8 @@ void pair_start(const char *srv)
     token = NULL;
     cancelled = 0;
     state = PAIR_REQUESTING;
-    if (LWP_CreateThread(&thread, pair_thread, NULL, NULL, 64 * 1024, 50) < 0) {
-        thread = LWP_THREAD_NULL;
+    thread_running = thread_start(&thread, pair_thread, 128 * 1024) == 0;
+    if (!thread_running) {
         fail("Could not start the network thread.");
     }
 }
@@ -109,9 +110,9 @@ void pair_start(const char *srv)
 void pair_cancel(void)
 {
     cancelled = 1;
-    if (thread != LWP_THREAD_NULL) {
-        LWP_JoinThread(thread, NULL);
-        thread = LWP_THREAD_NULL;
+    if (thread_running) {
+        pthread_join(thread, NULL);
+        thread_running = 0;
     }
     state = PAIR_IDLE;
 }

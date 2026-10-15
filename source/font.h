@@ -1,6 +1,6 @@
 #pragma once
 #include <stddef.h>
-#include <gctypes.h>
+#include "platform.h"
 
 /* Text in Rodin NTLG Pro DB and B (menus), the Pictochat font and, once it has been
  * downloaded, pict.chat's NintendoDSBIOS font. Strings are UTF-8. y is the top

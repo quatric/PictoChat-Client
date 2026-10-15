@@ -5,6 +5,8 @@ dist/
 *.o
 *.d
 *.elf
-*.dol
+*.rpx
+*.wuhb
+*.lst
 *.map
 __pycache__/

@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include "platform.h"
 #include "settings.h"
 #include "version.h"
 
 settings_t settings;
-char app_dir[128] = "sd:/apps/PictoChat";
+char app_dir[128] = APP_DIR;
 
 static void trim_slash(char *s)
 {
@@ -21,10 +23,7 @@ void settings_load(const char *argv0)
     settings.captcha = 1;
     settings.volume = 80;
     settings.color = 0xFFFFFFFF; /* none yet: pick one at random */
-    if (argv0 && strchr(argv0, '/') && (!strncmp(argv0, "sd:", 3) || !strncmp(argv0, "usb:", 4))) {
-        snprintf(app_dir, sizeof app_dir, "%s", argv0);
-        *strrchr(app_dir, '/') = 0;
-    }
+    (void)argv0; /* a .wuhb has no folder of its own: settings live in sd:/wiiu/apps/PictoChat */
     char path[192];
     snprintf(path, sizeof path, "%s/settings.txt", app_dir);
     FILE *f = fopen(path, "r");
@@ -55,6 +54,9 @@ void settings_load(const char *argv0)
 void settings_save(void)
 {
     char path[192];
+    mkdir(SD_ROOT "/wiiu", 0777);
+    mkdir(SD_ROOT "/wiiu/apps", 0777);
+    mkdir(app_dir, 0777);
     snprintf(path, sizeof path, "%s/settings.txt", app_dir);
     FILE *f = fopen(path, "w");
     if (!f) return;

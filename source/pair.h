@@ -1,6 +1,6 @@
 #pragma once
 
-/* Captcha pairing through pictocard.net: the Wii shows a code, the player solves
+/* Captcha pairing through pictocard.net: the Wii U shows a code, the player solves
  * pict.chat's hCaptcha at <server>/pictochat/<code> on a phone or computer, and
  * the token comes back here. Runs on a background thread. */
 
