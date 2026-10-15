@@ -1,0 +1,65 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host tools
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl bzip2 xz-utils zip
+      - name: Build zlib, libpng, FreeType and mbedTLS
+        run: ./scripts/build_portlibs.sh
+      - name: Version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="$(cat VERSION)"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Build
+        run: make VERSION=${{ steps.version.outputs.version }} && make dist VERSION=${{ steps.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PictoChat-3DS
+          path: |
+            dist/PictoChat-3DS.zip
+            PictoChat.3dsx
+      - name: Move the latest tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git tag -f latest
+          git push -f origin latest
+      # Every push to main refreshes the "latest" release; tags like v1.2.0 also get their own release.
+      - name: Publish latest release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: PictoChat for 3DS (latest)
+          prerelease: false
+          make_latest: true
+          body: |
+            Latest build of PictoChat for 3DS from ${{ github.sha }}.
+
+            Extract PictoChat-3DS.zip to the root of your SD card and open PictoChat from the Homebrew Launcher.
+          files: |
+            dist/PictoChat-3DS.zip
+            PictoChat.3dsx
+      - name: Publish tagged release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          make_latest: false
+          files: |
+            dist/PictoChat-3DS.zip
+            PictoChat.3dsx
