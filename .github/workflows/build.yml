@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     container: devkitpro/devkitppc:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install host tools and portlibs
         run: |
           apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates curl bzip2 zip
@@ -29,12 +29,14 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
       - name: Build
         run: make VERSION=${{ steps.version.outputs.version }} && make dist VERSION=${{ steps.version.outputs.version }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
-          name: PictoChat-Wii
+          name: PictoChat-WiiU
+          if-no-files-found: error
           path: |
-            dist/PictoChat-Wii.zip
-            PictoChat.dol
+            dist/PictoChat-WiiU.zip
+            PictoChat.wuhb
+            PictoChat.rpx
       - name: Move the latest tag
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -47,21 +49,25 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: PictoChat for Wii (latest)
+          name: PictoChat for Wii U (latest)
           prerelease: false
           make_latest: true
           body: |
-            Latest build of PictoChat for Wii from ${{ github.sha }}.
+            Latest build of PictoChat for Wii U from ${{ github.sha }}.
 
-            Extract PictoChat-Wii.zip to the root of your SD card or USB drive and open PictoChat from the Homebrew Channel.
+            Extract PictoChat-WiiU.zip to the root of your SD card and open PictoChat from the Wii U Menu (requires Aroma).
+          fail_on_unmatched_files: true
           files: |
-            dist/PictoChat-Wii.zip
-            PictoChat.dol
+            dist/PictoChat-WiiU.zip
+            PictoChat.wuhb
+            PictoChat.rpx
       - name: Publish tagged release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           make_latest: false
+          fail_on_unmatched_files: true
           files: |
-            dist/PictoChat-Wii.zip
-            PictoChat.dol
+            dist/PictoChat-WiiU.zip
+            PictoChat.wuhb
+            PictoChat.rpx
