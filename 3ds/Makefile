@@ -111,21 +111,17 @@ run: $(BUILD)
 	3dslink $(TARGET).3dsx
 
 #---------------------------------------------------------------------------------
-# Installable CIA (needs makerom and bannertool on the PATH)
-cia: $(BUILD)
-	@bannertool makebanner -i meta/banner.png -a meta/audio.wav -o $(TARGET).bnr
-	@bannertool makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i $(APP_ICON) -o $(TARGET).icn
-	@makerom -f cia -o $(TARGET).cia -elf $(TARGET).elf -rsf meta/app.rsf -target t -exefslogo -icon $(TARGET).icn -banner $(TARGET).bnr -major $(word 1,$(subst ., ,$(VERSION))) -minor $(or $(word 2,$(subst ., ,$(VERSION))),0) -micro $(or $(word 3,$(subst ., ,$(VERSION))),0)
-	@echo built $(TARGET).cia
+# Installable CIA from the PictoChat.elf that make builds (needs makerom and
+# bannertool on the PATH)
+cia:
+	@./scripts/make_cia.sh $(VERSION)
 
-# For the Homebrew Launcher: 3ds/PictoChat/PictoChat.3dsx on the SD card,
-# plus PictoChat.cia to install with FBI
-dist: $(BUILD) cia
+# For the Homebrew Launcher: 3ds/PictoChat/PictoChat.3dsx on the SD card
+dist: $(BUILD)
 	@rm -rf dist && mkdir -p dist/3ds/PictoChat
 	@cp $(TARGET).3dsx dist/3ds/PictoChat/
 	@cd dist && zip -qr PictoChat-3DS.zip 3ds
-	@cp $(TARGET).cia dist/PictoChat-3DS.cia
-	@echo built dist/PictoChat-3DS.zip and dist/PictoChat-3DS.cia
+	@echo built dist/PictoChat-3DS.zip
 
 #---------------------------------------------------------------------------------
 else

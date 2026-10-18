@@ -59,8 +59,8 @@ You need devkitPro with devkitARM, libctru and citro2d (the `3ds-dev` group).
 ```bash
 ./scripts/build_portlibs.sh   # zlib, libpng, FreeType and mbedTLS 3.6, into ./portlibs/3ds
 make                          # PictoChat.3dsx
-make cia                      # PictoChat.cia (needs makerom and bannertool)
-make dist                     # dist/PictoChat-3DS.zip for the SD card and dist/PictoChat-3DS.cia
+make dist                     # dist/PictoChat-3DS.zip for the SD card
+make cia                      # PictoChat.cia to install with FBI (needs makerom and bannertool)
 ```
 
 `make AUTOTEST=1` builds a test version that replays `sdmc:/autotest.txt` (button presses, stylus touches and typing, see `source/autotest.c`), for exercising the app in an emulator such as Azahar. A self-hosted ayunpictojava server with no captcha secret is handy for this (`captcha=0` above). `make PROFILE=1` logs the time each frame takes to `sdmc:/pictochat-profile.txt`.

@@ -26,7 +26,9 @@ jobs:
       - name: Install host tools and portlibs
         run: |
           apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates curl bzip2 zip
-          dkp-pacman -Sy --noconfirm --needed ppc-freetype ppc-libpng ppc-libjpeg-turbo ppc-libwebp ppc-zlib ppc-bzip2 ppc-brotli
+          # The image already ships these; pkg.devkitpro.org refuses requests from CI runners.
+          pkgs="ppc-freetype ppc-libpng ppc-libjpeg-turbo ppc-libwebp ppc-zlib ppc-bzip2 ppc-brotli"
+          dkp-pacman -Q $pkgs || dkp-pacman -Sy --noconfirm --needed $pkgs
       - name: Build mbedTLS and controller libraries
         run: ./scripts/build_portlibs.sh
       - name: Version
@@ -84,15 +86,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install host tools
-        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl bzip2 xz-utils zip unzip
-      - name: Install makerom and bannertool (for the CIA)
-        run: |
-          curl -sSLf -o makerom.zip https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip
-          curl -sSLf -o bannertool.tar.gz https://github.com/carstene1ns/3ds-bannertool/releases/download/1.2.3/bannertool-1.2.3-linux.tar.gz
-          mkdir -p /usr/local/bin /tmp/bt
-          unzip -oq makerom.zip -d /tmp/mr && install -m755 "$(find /tmp/mr -type f -name makerom | head -1)" /usr/local/bin/makerom
-          tar -xzf bannertool.tar.gz -C /tmp/bt && install -m755 "$(find /tmp/bt -type f -name bannertool | head -1)" /usr/local/bin/bannertool
-          rm -f makerom.zip bannertool.tar.gz
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl bzip2 xz-utils zip
       - name: Build zlib, libpng, FreeType and mbedTLS
         run: ./scripts/build_portlibs.sh
       - name: Version
@@ -103,15 +97,52 @@ jobs:
       - name: Build
         run: make VERSION=${{ steps.version.outputs.version }} && make dist VERSION=${{ steps.version.outputs.version }}
       - name: Collect
-        run: mkdir -p ../out && cp dist/PictoChat-3DS.zip dist/PictoChat-3DS.cia PictoChat.3dsx ../out/
+        run: mkdir -p ../out && cp dist/PictoChat-3DS.zip PictoChat.3dsx ../out/
       - uses: actions/upload-artifact@v5
         with:
           name: PictoChat-3DS
           if-no-files-found: error
           path: out/
+      - uses: actions/upload-artifact@v5
+        with:
+          name: build-3ds-elf
+          if-no-files-found: error
+          path: 3ds/PictoChat.elf
+
+  # bannertool and makerom need a newer glibc than the devkitARM image has, so the CIA is packed on the runner.
+  n3ds-cia:
+    needs: n3ds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: build-3ds-elf
+          path: 3ds
+      - name: Install makerom and bannertool
+        run: |
+          mkdir -p "$HOME/bin" /tmp/mr /tmp/bt
+          curl -sSLf -o /tmp/makerom.zip https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip
+          curl -sSLf -o /tmp/bannertool.tar.gz https://github.com/carstene1ns/3ds-bannertool/releases/download/1.2.3/bannertool-1.2.3-linux.tar.gz
+          unzip -oq /tmp/makerom.zip -d /tmp/mr && install -m755 "$(find /tmp/mr -type f -name makerom | head -1)" "$HOME/bin/makerom"
+          tar -xzf /tmp/bannertool.tar.gz -C /tmp/bt && install -m755 "$(find /tmp/bt -type f -name bannertool | head -1)" "$HOME/bin/bannertool"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: Version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="$(cat 3ds/VERSION)"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Build the CIA
+        run: ./3ds/scripts/make_cia.sh ${{ steps.version.outputs.version }}
+      - run: mkdir -p out && cp 3ds/PictoChat.cia out/PictoChat-3DS.cia
+      - uses: actions/upload-artifact@v5
+        with:
+          name: PictoChat-3DS-cia
+          if-no-files-found: error
+          path: out/
 
   release:
-    needs: [wii, wiiu, n3ds]
+    needs: [wii, wiiu, n3ds, n3ds-cia]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
@@ -119,6 +150,7 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           path: out
+          pattern: PictoChat-*
           merge-multiple: true
       # Every push to main refreshes the "latest" release; tags like v1.2.0 also get their own release.
       - name: Move the latest tag
