@@ -39,6 +39,7 @@ LDFLAGS	=	-g $(MACHDEP) -Wl,-Map,$(notdir $@).map
 #---------------------------------------------------------------------------------
 LIBS	:=	-lmbedtls -lasnd -lfreetype -lpng16 -lturbojpeg -lwebp -lsharpyuv -lbrotlidec -lbrotlicommon -lbz2 -lz \
 		-lfat -lwiikeyboard -lwiiuse -lbte -logc -lm
+LIBS	:=	-lwiiupdate $(LIBS)
 
 AUTOTEST	?=	0
 ifeq ($(AUTOTEST),1)
@@ -67,6 +68,7 @@ endif
 # include and lib
 #---------------------------------------------------------------------------------
 LIBDIRS	:=	$(CURDIR)/portlibs/ppc $(PORTLIBS) $(CURDIR)/libinput-wii
+LIBDIRS	+=	$(CURDIR)/libwiiupdate
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional
@@ -133,6 +135,11 @@ export OUTPUT	:=	$(CURDIR)/$(TARGET)
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+
+$(BUILD): libwiiupdate-lib
+.PHONY: libwiiupdate-lib
+libwiiupdate-lib:
+	@$(MAKE) --no-print-directory -C $(CURDIR)/libwiiupdate
 
 #---------------------------------------------------------------------------------
 clean:

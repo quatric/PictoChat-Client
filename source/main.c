@@ -3,6 +3,7 @@
 #include <gccore.h>
 #include <fat.h>
 #include <ogc/lwp_watchdog.h>
+#include <wiiupdate.h>
 #include "app.h"
 #include "font.h"
 #include "gfx.h"
@@ -20,6 +21,8 @@ int main(int argc, char **argv)
     input_set_canvas(SW, SH);
     fatInitDefault();
     settings_load(argc > 0 ? argv[0] : NULL);
+    WIIUPDATE_SetAppPath(argc > 0 ? argv[0] : NULL);
+    WIIUPDATE_Start("quatric", "PictoChat-Wii", APP_VERSION);
     font_init();
     sound_init();
     srand(gettime());

@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <gccore.h>
 #include <ogc/lwp_watchdog.h>
+#include <wiiupdate.h>
 #include "app.h"
 #include "assets.h"
 #include "chat.h"
@@ -752,6 +753,32 @@ static void draw_connecting_overlay(void)
     ui_spinner_text(x, y + h / 2 - 10, w, frame, "Connecting to PictoChat...");
 }
 
+/* ── Update popup ────────────────────────────────────────────────────────── */
+
+static wiiupdate_popup update_pop;
+static int update_open;
+
+static void draw_update_popup(void)
+{
+    const wiiupdate_popup *p = &update_pop;
+    int w = 440, h = p->progress >= 0 || p->detail[0] ? 150 : 124;
+    int x = (SW - w) / 2, y = (SH - h) / 2;
+    gfx_fill_alpha(0, 0, SW, SH, 0x000000, 110);
+    gfx_frame(x, y, w, h, 6, 0xFBFBFB, settings.color, 2);
+    text_draw_center(FONT_REGULAR, 18, x, y + 14, w, 0x202020, p->title);
+    text_draw_center(FONT_REGULAR, 14, x, y + 50, w, 0x404040, p->text);
+    int row = y + 78;
+    if (p->progress >= 0) {
+        gfx_fill(x + 40, row + 4, w - 80, 10, 0xC8C8C8);
+        gfx_fill(x + 40, row + 4, (w - 80) * p->progress / 100, 10, settings.color);
+        row += 26;
+    } else if (p->detail[0]) {
+        text_draw_center(FONT_REGULAR, 14, x, row, w, 0x30BAF3, p->detail);
+        row += 26;
+    }
+    text_draw_center(FONT_REGULAR, 14, x, row + 8, w, 0x606060, p->hint);
+}
+
 static void draw_loading(void)
 {
     gfx_fill(0, 0, SW, SH, 0xE8E8E8);
@@ -949,7 +976,7 @@ static void draw(void)
 
     /* The canvas holds the side panels (and overlays); it only goes to the GPU when it changes.
      * The stage is scaled by the GPU on top of it. */
-    int overlay = screen == SCR_PAIR || screen == SCR_CONNECTING;
+    int overlay = screen == SCR_PAIR || screen == SCR_CONNECTING || update_open;
     char key[96];
     snprintf(key, sizeof key, "%d %s %06x %d %d %d %d %d", screen, my_name, (unsigned)my_color, room_index, private_room,
              stage_view(), unread, stage_dark());
@@ -961,6 +988,7 @@ static void draw(void)
         if (cpu_stage) stage_present();
         if (screen == SCR_PAIR) draw_pairing_overlay();
         else if (screen == SCR_CONNECTING) draw_connecting_overlay();
+        if (update_open) draw_update_popup();
         gfx_canvas_changed();
     }
     if (cpu_stage) {
@@ -1061,8 +1089,18 @@ void app_run(void)
             }
             if (in.down & BTN_HOME) break;
         } else {
-            handle_keyboard();
-            handle_input(&in);
+            /* The update popup takes the controls while it is up, and on the frame it closes. */
+            int was_open = update_open;
+            int ust = WIIUPDATE_Popup(in.down, &update_pop);
+            if (ust == WIIUPDATE_POPUP_EXIT) break;
+            update_open = ust == WIIUPDATE_POPUP_OPEN;
+            if (update_open || was_open) {
+                key_event ev;
+                while (input_key(&ev)) {}
+            } else {
+                handle_keyboard();
+                handle_input(&in);
+            }
         }
         update();
         draw();
