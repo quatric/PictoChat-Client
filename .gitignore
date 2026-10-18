@@ -8,3 +8,4 @@ dist/
 *.dol
 *.map
 __pycache__/
+.dolxz/
