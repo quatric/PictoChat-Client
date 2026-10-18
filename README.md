@@ -5,7 +5,7 @@ Homebrew clients for [PictoChat Online](https://pict.chat) by ayunami2000: join 
 | Console | Folder | Download | Install |
 | --- | --- | --- | --- |
 | Wii | [`wii/`](wii) | `PictoChat-Wii.zip` | Extract to the SD card or USB drive, open from the Homebrew Channel |
-| Wii U | [`wiiu/`](wiiu) | `PictoChat-WiiU.zip` | Extract to the SD card, open from the Wii U Menu (Aroma) |
+| Wii U | [`wiiu/`](wiiu) | `PictoChat-WUP.zip` | Extract to the SD card, open from the Wii U Menu (Aroma) |
 | 3DS | [`3ds/`](3ds) | `PictoChat-3DS.zip` or `PictoChat-3DS.cia` | Extract to the SD card for the Homebrew Launcher, or install the CIA with FBI |
 
 Grab the builds from the [latest release](../../releases/latest). Every push to `main` builds all three in one workflow and refreshes it.

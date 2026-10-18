@@ -19,6 +19,10 @@ jobs:
         working-directory: wii
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - name: Install dolxz build dependencies
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends gcc libc6-dev liblzma-dev pkg-config curl ca-certificates
       - name: Install host tools and portlibs
         run: |
           apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates curl bzip2 zip
@@ -64,7 +68,7 @@ jobs:
       - name: Build
         run: make VERSION=${{ steps.version.outputs.version }} && make dist VERSION=${{ steps.version.outputs.version }}
       - name: Collect
-        run: mkdir -p ../out && cp dist/PictoChat-WiiU.zip PictoChat.wuhb PictoChat.rpx ../out/
+        run: mkdir -p ../out && cp dist/PictoChat-WUP.zip PictoChat.wuhb PictoChat.rpx ../out/
       - uses: actions/upload-artifact@v5
         with:
           name: PictoChat-WiiU
@@ -135,12 +139,12 @@ jobs:
             Latest build of PictoChat from ${{ github.sha }}.
 
             - **Wii**: extract PictoChat-Wii.zip to the root of your SD card or USB drive and open PictoChat from the Homebrew Channel.
-            - **Wii U**: extract PictoChat-WiiU.zip to the root of your SD card and open PictoChat from the Wii U Menu (requires Aroma).
+            - **Wii U**: extract PictoChat-WUP.zip to the root of your SD card and open PictoChat from the Wii U Menu (requires Aroma).
             - **3DS**: extract PictoChat-3DS.zip to the root of your SD card and open PictoChat from the Homebrew Launcher, or install PictoChat-3DS.cia with FBI.
           files: |
             out/PictoChat-Wii.zip
             out/PictoChat.dol
-            out/PictoChat-WiiU.zip
+            out/PictoChat-WUP.zip
             out/PictoChat.wuhb
             out/PictoChat.rpx
             out/PictoChat-3DS.zip
@@ -155,7 +159,7 @@ jobs:
           files: |
             out/PictoChat-Wii.zip
             out/PictoChat.dol
-            out/PictoChat-WiiU.zip
+            out/PictoChat-WUP.zip
             out/PictoChat.wuhb
             out/PictoChat.rpx
             out/PictoChat-3DS.zip

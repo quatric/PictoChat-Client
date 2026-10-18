@@ -17,7 +17,7 @@ include $(DEVKITPPC)/wii_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	PictoChat
 BUILD		:=	build
-SOURCES		:=	source
+SOURCES		:=	source libinput-wii/source
 DATA		:=	data
 INCLUDES	:=	config
 
@@ -39,6 +39,7 @@ LDFLAGS	=	-g $(MACHDEP) -Wl,-Map,$(notdir $@).map
 #---------------------------------------------------------------------------------
 LIBS	:=	-lmbedtls -lasnd -lfreetype -lpng16 -lturbojpeg -lwebp -lsharpyuv -lbrotlidec -lbrotlicommon -lbz2 -lz \
 		-lfat -lwiikeyboard -lwiiuse -lbte -logc -lm
+LIBS	:=	-lwiiupdate $(LIBS)
 
 AUTOTEST	?=	0
 ifeq ($(AUTOTEST),1)
@@ -66,12 +67,20 @@ endif
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:=	$(CURDIR)/portlibs/ppc $(PORTLIBS)
+LIBDIRS	:=	$(CURDIR)/portlibs/ppc $(PORTLIBS) $(CURDIR)/libinput-wii
+LIBDIRS	+=	$(CURDIR)/libwiiupdate
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional
 # rules for different file extensions
 #---------------------------------------------------------------------------------
+# The .dol that goes into the Homebrew Channel package.
+ifeq ($(NO_DOLXZ),1)
+BOOT_DOL	=	$(TARGET).dol
+else
+BOOT_DOL	=	$(TARGET)-xz.dol
+endif
+
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 #---------------------------------------------------------------------------------
 
@@ -127,10 +136,15 @@ $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
+$(BUILD): libwiiupdate-lib
+.PHONY: libwiiupdate-lib
+libwiiupdate-lib:
+	@$(MAKE) --no-print-directory -C $(CURDIR)/libwiiupdate
+
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).dol dist
+	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).dol $(OUTPUT)-xz.dol dist
 
 #---------------------------------------------------------------------------------
 run:
@@ -140,7 +154,7 @@ run:
 # Homebrew Channel package: apps/PictoChat/{boot.dol,icon.png,meta.xml}
 dist: $(BUILD)
 	@mkdir -p dist/apps/PictoChat
-	@cp $(TARGET).dol dist/apps/PictoChat/boot.dol
+	@cp $(BOOT_DOL) dist/apps/PictoChat/boot.dol
 	@cp apps/PictoChat/icon.png dist/apps/PictoChat/
 	@sed -e "s/@VERSION@/$(VERSION)/" -e "s/@DATE@/$$(date -u +%Y%m%d%H%M%S)/" apps/PictoChat/meta.xml > dist/apps/PictoChat/meta.xml
 	@cd dist && rm -f PictoChat-Wii.zip && zip -qr PictoChat-Wii.zip apps
@@ -155,6 +169,16 @@ DEPENDS	:=	$(OFILES:.o=.d)
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------
+# Self-extracting xz-compressed copy of the .dol (FIX94's dolxz, see
+# scripts/dolxz.sh). It is the default target; NO_DOLXZ=1 skips it.
+#---------------------------------------------------------------------------------
+ifneq ($(NO_DOLXZ),1)
+$(OUTPUT)-xz.dol: $(OUTPUT).dol
+	@echo compressing ... $(notdir $@)
+	@sh $(dir $(OUTPUT))scripts/dolxz.sh $< $@
+endif
+
 $(OUTPUT).dol: $(OUTPUT).elf
 $(OUTPUT).elf: $(OFILES)
 

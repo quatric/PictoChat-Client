@@ -118,8 +118,8 @@ clean:
 dist: $(BUILD)
 	@rm -rf dist && mkdir -p dist/wiiu/apps/PictoChat
 	@cp $(TARGET).wuhb dist/wiiu/apps/PictoChat/
-	@cd dist && zip -qr PictoChat-WiiU.zip wiiu
-	@echo built dist/PictoChat-WiiU.zip
+	@cd dist && zip -qr PictoChat-WUP.zip wiiu
+	@echo built dist/PictoChat-WUP.zip
 
 #-------------------------------------------------------------------------------
 else

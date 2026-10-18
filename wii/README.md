@@ -53,9 +53,11 @@ You need devkitPro with devkitPPC and these portlibs: `ppc-freetype ppc-libpng p
 
 ```bash
 ./scripts/build_portlibs.sh   # mbedTLS 3.6 and the extra controller libraries, into ./portlibs
-make                          # PictoChat.dol
+make                          # PictoChat.dol and the compressed PictoChat-xz.dol
 make dist                     # dist/PictoChat-Wii.zip for the Homebrew Channel
 ```
+
+`make` also writes `PictoChat-xz.dol`, the same program packed into a self-extracting `.dol` a fraction of the size; `make dist` packages it as `boot.dol`. The first build downloads and builds [dolxz](https://github.com/FIX94/dolxz), which needs a host C compiler and liblzma (Debian/Ubuntu: `apt-get install liblzma-dev pkg-config`; macOS: `brew install xz`). `make NO_DOLXZ=1` skips this and uses the plain `.dol`.
 
 `make AUTOTEST=1` builds a test version that replays `sd:/autotest.txt` (button presses, typing and pointer moves) and saves screenshots to `sd:/shots`, for exercising the app in Dolphin. A self-hosted ayunpictojava server with no captcha secret is handy for this (`captcha=0` above).
 

@@ -8,7 +8,7 @@ This is the Wii U port of [PictoChat for Wii](https://github.com/quatric/PictoCh
 
 You need the [Aroma](https://aroma.foryour.cafe) environment.
 
-1. Extract `PictoChat-WiiU.zip` to the root of your SD card. It adds `wiiu/apps/PictoChat/PictoChat.wuhb`.
+1. Extract `PictoChat-WUP.zip` to the root of your SD card. It adds `wiiu/apps/PictoChat/PictoChat.wuhb`.
 2. Open PictoChat from the Wii U Menu. The Wii U needs to be connected to the Internet.
 
 ## Joining
@@ -76,7 +76,7 @@ You need devkitPro with devkitPPC, [wut](https://github.com/devkitPro/wut), `wii
 ```bash
 ./scripts/build_portlibs.sh   # mbedTLS 3.6, into ./portlibs
 make                          # PictoChat.rpx and PictoChat.wuhb
-make dist                     # dist/PictoChat-WiiU.zip for the SD card
+make dist                     # dist/PictoChat-WUP.zip for the SD card
 ```
 
 `make AUTOTEST=1` builds a test version that replays `sd:/autotest.txt` (button presses, typing and pointer moves) and saves screenshots to `sd:/shots`, for exercising the app in Cemu. A self-hosted ayunpictojava server with no captcha secret is handy for this (`captcha=0` above).

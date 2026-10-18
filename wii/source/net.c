@@ -8,6 +8,7 @@
 #include <network.h>
 #include <poll.h>
 #include <ogc/lwp_watchdog.h>
+#include <wiiupdate.h>
 #include <mbedtls/ssl.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
@@ -37,6 +38,13 @@ mbedtls_ms_time_t mbedtls_ms_time(void)
 
 int net_start(char *ip, size_t ip_len)
 {
+    /* The update check brings the network up too; never run if_config alongside it. */
+    if (WIIUPDATE_State() == WIIUPDATE_CHECKING) WIIUPDATE_Wait(20000);
+    if (!net_ready && net_gethostip()) {
+        u32 a = net_gethostip();
+        if (ip) snprintf(ip, ip_len, "%u.%u.%u.%u", a >> 24, (a >> 16) & 255, (a >> 8) & 255, a & 255);
+        net_ready = 1;
+    }
     if (!net_ready) {
         int ret = -1;
         for (int attempt = 0; attempt < 3 && ret < 0; attempt++) {
