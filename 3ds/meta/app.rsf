@@ -12,7 +12,6 @@ TitleInfo:
 Option:
   UseOnSD                 : true
   FreeProductCode         : true
-  MediaFootprint          : SDCard
   EnableCrypt             : false
   EnableCompress          : true
 
@@ -37,10 +36,7 @@ AccessControlInfo:
   EnableForceDebug        : false
   CanWriteSharedPage      : true
   CanUsePrivilegedPriority: false
-  CanUseNonAlphaNum       : false
-  CanUseCoreServices      : false
   CanAccessCore2          : true
-  MaxAppMemory            : 64
   ResourceLimitCategory   : Application
   ServiceAccessControl:
     - APT:U
