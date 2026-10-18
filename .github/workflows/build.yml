@@ -11,11 +11,14 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  wii:
     runs-on: ubuntu-latest
     container: devkitpro/devkitppc:latest
+    defaults:
+      run:
+        working-directory: wii
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install host tools and portlibs
         run: |
           apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates curl bzip2 zip
@@ -29,39 +32,132 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
       - name: Build
         run: make VERSION=${{ steps.version.outputs.version }} && make dist VERSION=${{ steps.version.outputs.version }}
-      - uses: actions/upload-artifact@v4
+      - name: Collect
+        run: mkdir -p ../out && cp dist/PictoChat-Wii.zip PictoChat.dol ../out/
+      - uses: actions/upload-artifact@v5
         with:
           name: PictoChat-Wii
-          path: |
-            dist/PictoChat-Wii.zip
-            PictoChat.dol
-      - name: Move the latest tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+          if-no-files-found: error
+          path: out/
+
+  wiiu:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+    defaults:
+      run:
+        working-directory: wiiu
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install host tools and portlibs
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates curl bzip2 zip
+          # The image already ships these; pkg.devkitpro.org refuses requests from CI runners.
+          pkgs="ppc-freetype ppc-libpng ppc-libjpeg-turbo ppc-libwebp ppc-zlib ppc-bzip2 ppc-brotli wiiu-sdl2"
+          dkp-pacman -Q $pkgs || dkp-pacman -Sy --noconfirm --needed $pkgs
+      - name: Build mbedTLS and controller libraries
+        run: ./scripts/build_portlibs.sh
+      - name: Version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="$(cat VERSION)"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Build
+        run: make VERSION=${{ steps.version.outputs.version }} && make dist VERSION=${{ steps.version.outputs.version }}
+      - name: Collect
+        run: mkdir -p ../out && cp dist/PictoChat-WiiU.zip PictoChat.wuhb PictoChat.rpx ../out/
+      - uses: actions/upload-artifact@v5
+        with:
+          name: PictoChat-WiiU
+          if-no-files-found: error
+          path: out/
+
+  3ds:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    defaults:
+      run:
+        working-directory: 3ds
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install host tools
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl bzip2 xz-utils zip unzip
+      - name: Install makerom and bannertool (for the CIA)
+        run: |
+          curl -sSLf -o makerom.zip https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip
+          curl -sSLf -o bannertool.tar.gz https://github.com/carstene1ns/3ds-bannertool/releases/download/1.2.3/bannertool-1.2.3-linux.tar.gz
+          mkdir -p /usr/local/bin /tmp/bt
+          unzip -oq makerom.zip -d /tmp/mr && install -m755 "$(find /tmp/mr -type f -name makerom | head -1)" /usr/local/bin/makerom
+          tar -xzf bannertool.tar.gz -C /tmp/bt && install -m755 "$(find /tmp/bt -type f -name bannertool | head -1)" /usr/local/bin/bannertool
+          rm -f makerom.zip bannertool.tar.gz
+      - name: Build zlib, libpng, FreeType and mbedTLS
+        run: ./scripts/build_portlibs.sh
+      - name: Version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="$(cat VERSION)"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Build
+        run: make VERSION=${{ steps.version.outputs.version }} && make dist VERSION=${{ steps.version.outputs.version }}
+      - name: Collect
+        run: mkdir -p ../out && cp dist/PictoChat-3DS.zip dist/PictoChat-3DS.cia PictoChat.3dsx ../out/
+      - uses: actions/upload-artifact@v5
+        with:
+          name: PictoChat-3DS
+          if-no-files-found: error
+          path: out/
+
+  release:
+    needs: [wii, wiiu, 3ds]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          path: out
+          merge-multiple: true
+      # Every push to main refreshes the "latest" release; tags like v1.2.0 also get their own release.
+      - name: Move the latest tag
+        if: github.ref == 'refs/heads/main'
+        run: |
           git tag -f latest
           git push -f origin latest
-      # Every push to main refreshes the "latest" release; tags like v1.2.0 also get their own release.
       - name: Publish latest release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: PictoChat for Wii (latest)
+          name: PictoChat (latest)
           prerelease: false
           make_latest: true
+          fail_on_unmatched_files: true
           body: |
-            Latest build of PictoChat for Wii from ${{ github.sha }}.
+            Latest build of PictoChat from ${{ github.sha }}.
 
-            Extract PictoChat-Wii.zip to the root of your SD card or USB drive and open PictoChat from the Homebrew Channel.
+            - **Wii**: extract PictoChat-Wii.zip to the root of your SD card or USB drive and open PictoChat from the Homebrew Channel.
+            - **Wii U**: extract PictoChat-WiiU.zip to the root of your SD card and open PictoChat from the Wii U Menu (requires Aroma).
+            - **3DS**: extract PictoChat-3DS.zip to the root of your SD card and open PictoChat from the Homebrew Launcher, or install PictoChat-3DS.cia with FBI.
           files: |
-            dist/PictoChat-Wii.zip
-            PictoChat.dol
+            out/PictoChat-Wii.zip
+            out/PictoChat.dol
+            out/PictoChat-WiiU.zip
+            out/PictoChat.wuhb
+            out/PictoChat.rpx
+            out/PictoChat-3DS.zip
+            out/PictoChat-3DS.cia
+            out/PictoChat.3dsx
       - name: Publish tagged release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           make_latest: false
+          fail_on_unmatched_files: true
           files: |
-            dist/PictoChat-Wii.zip
-            PictoChat.dol
+            out/PictoChat-Wii.zip
+            out/PictoChat.dol
+            out/PictoChat-WiiU.zip
+            out/PictoChat.wuhb
+            out/PictoChat.rpx
+            out/PictoChat-3DS.zip
+            out/PictoChat-3DS.cia
+            out/PictoChat.3dsx

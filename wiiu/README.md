@@ -2,7 +2,7 @@
 
 A Wii U homebrew client for [PictoChat Online](https://pict.chat) by ayunami2000. Join the chat rooms, type with the DS keyboards and draw on the GamePad's touch screen, just like PictoChat on the Nintendo DS. It looks, sounds and behaves like pict.chat, and you chat with everyone using the website.
 
-This is the Wii U port of [PictoChat for Wii](https://github.com/quatric/PictoChat-Wii).
+This is the Wii U port of [PictoChat for Wii](https://github.com/quatric/PictoChat-Client/tree/main/wii).
 
 ## Installing
 

@@ -10,3 +10,6 @@ dist/
 *.map
 *.lst
 __pycache__/
+*.cia
+*.bnr
+*.icn

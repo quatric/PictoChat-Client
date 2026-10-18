@@ -1,6 +1,6 @@
 # PictoChat for 3DS
 
-A 3DS homebrew client for [PictoChat Online](https://pict.chat) by ayunami2000, ported from [PictoChat for Wii](https://github.com/quatric/PictoChat-Wii). Join the chat rooms, type with the DS keyboards and draw with the stylus. It looks, sounds and behaves like pict.chat, and you chat with everyone using the website.
+A 3DS homebrew client for [PictoChat Online](https://pict.chat) by ayunami2000, ported from [PictoChat for Wii](https://github.com/quatric/PictoChat-Client/tree/main/wii). Join the chat rooms, type with the DS keyboards and draw with the stylus. It looks, sounds and behaves like pict.chat, and you chat with everyone using the website.
 
 The two DS screens go where they belong: the message log on the top screen and the drawing box and keyboards on the touch screen. They are scaled up to fill both screens (the touch screen exactly), or shown pixel for pixel like a DS game if you press SELECT.
 
@@ -8,6 +8,8 @@ The two DS screens go where they belong: the message log on the top screen and t
 
 1. Extract `PictoChat-3DS.zip` to the root of your SD card. It adds `3ds/PictoChat/PictoChat.3dsx`.
 2. Open PictoChat from the Homebrew Launcher. The 3DS needs Wi-Fi.
+
+Or install `PictoChat-3DS.cia` with FBI to get PictoChat on the HOME Menu.
 
 For sound, the DSP firmware has to be dumped once with [DSP1](https://github.com/zoogie/DSP1) (`sdmc:/3ds/dspfirm.cdc`). Without it the app works silently.
 
@@ -57,7 +59,8 @@ You need devkitPro with devkitARM, libctru and citro2d (the `3ds-dev` group).
 ```bash
 ./scripts/build_portlibs.sh   # zlib, libpng, FreeType and mbedTLS 3.6, into ./portlibs/3ds
 make                          # PictoChat.3dsx
-make dist                     # dist/PictoChat-3DS.zip for the SD card
+make cia                      # PictoChat.cia (needs makerom and bannertool)
+make dist                     # dist/PictoChat-3DS.zip for the SD card and dist/PictoChat-3DS.cia
 ```
 
 `make AUTOTEST=1` builds a test version that replays `sdmc:/autotest.txt` (button presses, stylus touches and typing, see `source/autotest.c`), for exercising the app in an emulator such as Azahar. A self-hosted ayunpictojava server with no captcha secret is handy for this (`captcha=0` above). `make PROFILE=1` logs the time each frame takes to `sdmc:/pictochat-profile.txt`.
@@ -72,7 +75,7 @@ The captcha is relayed by pictocard.net (the `/pictochat` page and `/api/v1/pict
 
 - [PictoChat Online](https://pict.chat) and [ayunpictojava](https://github.com/ayunami2000/ayunpictojava) by ayunami2000. The pictures, sounds, icon and NintendoDSBIOS font in `data/` come from it. The sounds were converted to raw PCM with `scripts/convert_sounds.sh`.
 - PictoChat is a trademark of Nintendo. This app isn't affiliated with Nintendo or with PictoChat Online.
-- Based on [PictoChat for Wii](https://github.com/quatric/PictoChat-Wii)
+- Based on [PictoChat for Wii](https://github.com/quatric/PictoChat-Client/tree/main/wii)
 - [libctru and citro2d](https://github.com/devkitPro), [mbedTLS](https://github.com/Mbed-TLS/mbedtls), [cJSON](https://github.com/DaveGamble/cJSON), FreeType, libpng, zlib and [QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) by Project Nayuki (MIT)
 - Pictochat font by Kirby3 (CC BY-SA 3.0), see `data/pictochat-license.txt`
 
