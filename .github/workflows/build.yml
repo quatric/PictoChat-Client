@@ -75,7 +75,7 @@ jobs:
           if-no-files-found: error
           path: out/
 
-  3ds:
+  n3ds:
     runs-on: ubuntu-latest
     container: devkitpro/devkitarm:latest
     defaults:
@@ -111,7 +111,7 @@ jobs:
           path: out/
 
   release:
-    needs: [wii, wiiu, 3ds]
+    needs: [wii, wiiu, n3ds]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
