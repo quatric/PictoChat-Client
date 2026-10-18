@@ -16,6 +16,8 @@ jobs:
     container: devkitpro/devkitppc:latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Install host tools and portlibs
         run: |
           apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates curl bzip2 zip

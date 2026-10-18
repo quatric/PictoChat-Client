@@ -17,7 +17,7 @@ include $(DEVKITPPC)/wii_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	PictoChat
 BUILD		:=	build
-SOURCES		:=	source
+SOURCES		:=	source libinput-wii/source
 DATA		:=	data
 INCLUDES	:=	config
 
@@ -66,7 +66,7 @@ endif
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:=	$(CURDIR)/portlibs/ppc $(PORTLIBS)
+LIBDIRS	:=	$(CURDIR)/portlibs/ppc $(PORTLIBS) $(CURDIR)/libinput-wii
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional
