@@ -22,7 +22,7 @@ int main(int argc, char **argv)
     fatInitDefault();
     settings_load(argc > 0 ? argv[0] : NULL);
     WIIUPDATE_SetAppPath(argc > 0 ? argv[0] : NULL);
-    WIIUPDATE_Start("quatric", "PictoChat-Wii", APP_VERSION);
+    WIIUPDATE_Start("quatric", "PictoChat-Client", APP_VERSION);
     font_init();
     sound_init();
     srand(gettime());
