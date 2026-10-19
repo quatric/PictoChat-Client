@@ -5,7 +5,7 @@
 #include "input.h"
 
 /* Controllers, keyboard, mouse and the optional Wii U / DualShock 3 backends
- * come from libinput-wii. This file adds the app's own behaviour on top:
+ * come from libwiiinput. This file adds the app's own behaviour on top:
  * sticks and the mouse wheel as the D-Pad, mouse buttons as A / B / +,
  * and auto-repeating directions. */
 
