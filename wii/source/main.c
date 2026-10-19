@@ -29,6 +29,10 @@ int main(int argc, char **argv)
 
     app_run();
 
+    /* let the update check thread finish before the network and video go away */
+    WIIUPDATE_Cancel();
+    WIIUPDATE_Wait(5000);
+
     sound_shutdown();
     input_shutdown();
     gfx_shutdown();
