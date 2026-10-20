@@ -11,6 +11,10 @@ You need the [Aroma](https://aroma.foryour.cafe) environment.
 1. Extract `PictoChat-WUP.zip` to the root of your SD card. It adds `wiiu/apps/PictoChat/PictoChat.wuhb`.
 2. Open PictoChat from the Wii U Menu. The Wii U needs to be connected to the Internet.
 
+### Updates
+
+At launch PictoChat checks for a newer release. When there is one it offers it: **A** downloads it and installs it over this copy, then you return to the Wii U Menu; **B** skips it. Your settings are kept. This is done by [libwiiuupdate](https://github.com/quatric/libwiiuupdate).
+
 ## Joining
 
 Choose a name and a colour, then select **Join PictoChat**. PictoChat Online asks everyone to solve a captcha first, and the Wii U can't show one. The app shows a short code and a QR code instead. On your phone or computer, open [pictocard.net/pictochat](https://pictocard.net/pictochat), enter the code (or scan the QR code) and solve the captcha. Your Wii U then joins by itself. You only have to do this when you connect, not for every room.
@@ -74,6 +78,7 @@ captcha=0
 You need devkitPro with devkitPPC, [wut](https://github.com/devkitPro/wut), `wiiu-sdl2` and these portlibs: `ppc-freetype ppc-libpng ppc-libjpeg-turbo ppc-libwebp ppc-zlib ppc-bzip2 ppc-brotli`.
 
 ```bash
+git submodule update --init   # libwiiuupdate
 ./scripts/build_portlibs.sh   # mbedTLS 3.6, into ./portlibs
 make                          # PictoChat.rpx and PictoChat.wuhb
 make dist                     # dist/PictoChat-WUP.zip for the SD card

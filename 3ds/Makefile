@@ -54,13 +54,13 @@ ifeq ($(PROFILE),1)
  CFLAGS += -DPROFILE
 endif
 
-LIBS	:=	-lmbedtls -lfreetype -lpng16 -lz -lcitro2d -lcitro3d -lctru -lm
+LIBS	:=	-l3dsupdate -lmbedtls -lfreetype -lpng16 -lz -lcitro2d -lcitro3d -lctru -lm
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:=	$(TOPDIR)/portlibs/3ds $(CTRULIB)
+LIBDIRS	:=	$(TOPDIR)/lib3dsupdate $(TOPDIR)/portlibs/3ds $(CTRULIB)
 
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -100,6 +100,11 @@ export _3DSXFLAGS	+=	--smdh=$(CURDIR)/$(TARGET).smdh
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+
+$(BUILD): lib3dsupdate-lib
+.PHONY: lib3dsupdate-lib
+lib3dsupdate-lib:
+	@$(MAKE) --no-print-directory -C $(CURDIR)/lib3dsupdate
 
 #---------------------------------------------------------------------------------
 clean:

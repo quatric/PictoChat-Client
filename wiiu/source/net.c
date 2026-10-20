@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <coreinit/time.h>
 #include <nn/ac.h>
+#include <wiiuupdate.h>
 #include "platform.h"
 #include <mbedtls/ssl.h>
 #include <mbedtls/entropy.h>
@@ -43,6 +44,8 @@ mbedtls_ms_time_t mbedtls_ms_time(void)
 
 int net_start(char *ip, size_t ip_len)
 {
+    /* The update check connects too, and its popup should come first: let it finish. */
+    if (WIIUUPDATE_State() == WIIUUPDATE_CHECKING) WIIUUPDATE_Wait(20000);
     if (!net_ready) {
         static int ac_ready;
         if (!ac_ready) {

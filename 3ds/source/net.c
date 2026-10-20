@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <3dsupdate.h>
 #include "sys.h"
 #include <mbedtls/ssl.h>
 #include <mbedtls/entropy.h>
@@ -45,9 +46,17 @@ mbedtls_ms_time_t mbedtls_ms_time(void)
 int net_start(char *ip, size_t ip_len)
 {
     if (!net_ready) {
+        /* soc can only be started once at a time, and the update check (or a
+         * download) may be using it: let that finish first. */
+        if (CTRUPDATE_State() == CTRUPDATE_CHECKING) CTRUPDATE_Wait(20000);
         if (!soc_buffer) soc_buffer = memalign(0x1000, SOC_BUFFER_SIZE);
         if (!soc_buffer) return -1;
-        if (R_FAILED(socInit(soc_buffer, SOC_BUFFER_SIZE))) return -1;
+        Result r = socInit(soc_buffer, SOC_BUFFER_SIZE);
+        if (R_FAILED(r)) {
+            CTRUPDATE_Wait(60000);
+            r = socInit(soc_buffer, SOC_BUFFER_SIZE);
+        }
+        if (R_FAILED(r)) return -1;
         net_ready = 1;
     }
     /* no address yet: Wi-Fi is off or not connected */

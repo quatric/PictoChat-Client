@@ -11,6 +11,10 @@ The two DS screens go where they belong: the message log on the top screen and t
 
 Or install `PictoChat-3DS.cia` with FBI to get PictoChat on the HOME Menu.
 
+### Updates
+
+At launch PictoChat checks for a newer release. When there is one it offers it: **A** downloads it and installs it over this copy (the new `.3dsx`, or the new CIA when PictoChat is installed on the HOME Menu), then you return to the Homebrew Launcher or the HOME Menu; **B** skips it. Your settings are kept. This is done by [lib3dsupdate](https://github.com/quatric/lib3dsupdate).
+
 For sound, the DSP firmware has to be dumped once with [DSP1](https://github.com/zoogie/DSP1) (`sdmc:/3ds/dspfirm.cdc`). Without it the app works silently.
 
 ## Joining
@@ -57,6 +61,7 @@ captcha=0
 You need devkitPro with devkitARM, libctru and citro2d (the `3ds-dev` group).
 
 ```bash
+git submodule update --init   # lib3dsupdate
 ./scripts/build_portlibs.sh   # zlib, libpng, FreeType and mbedTLS 3.6, into ./portlibs/3ds
 make                          # PictoChat.3dsx
 make dist                     # dist/PictoChat-3DS.zip for the SD card

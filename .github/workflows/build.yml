@@ -54,6 +54,8 @@ jobs:
         working-directory: wiiu
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
       - name: Install host tools and portlibs
         run: |
           apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates curl bzip2 zip
@@ -85,6 +87,8 @@ jobs:
         working-directory: 3ds
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: true
       - name: Install host tools
         run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl bzip2 xz-utils zip
       - name: Build zlib, libpng, FreeType and mbedTLS

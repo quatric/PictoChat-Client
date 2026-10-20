@@ -7,6 +7,10 @@ A Homebrew Channel client for [PictoChat Online](https://pict.chat) by ayunami20
 1. Extract `PictoChat-Wii.zip` to the root of your SD card or USB drive. It adds `apps/PictoChat`.
 2. Open PictoChat from the Homebrew Channel. The Wii needs to be connected to the Internet.
 
+### Updates
+
+At launch PictoChat checks for a newer release. When there is one it offers it: **A** downloads it and installs it over this copy, then you return to the Homebrew Channel; **B** skips it. Your settings are kept.
+
 ## Joining
 
 Choose a name and a colour, then select **Join PictoChat**. PictoChat Online asks everyone to solve a captcha first, and a Wii can't show one. The app shows a short code and a QR code instead. On your phone or computer, open [pictocard.net/pictochat](https://pictocard.net/pictochat), enter the code (or scan the QR code) and solve the captcha. Your Wii then joins by itself. You only have to do this when you connect, not for every room.

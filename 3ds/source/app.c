@@ -5,6 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <3ds.h>
+#include <3dsupdate.h>
 #include "app.h"
 #include "assets.h"
 #include "chat.h"
@@ -724,6 +725,42 @@ static void draw_connecting(void)
     ui_spinner_text(0, 192 + 86, STAGE_W, frame, "Connecting to PictoChat...");
 }
 
+/* ── Update popup ────────────────────────────────────────────────────────── */
+/* Drawn on the stage, over the top DS screen. */
+
+static ctrupdate_popup update_pop;
+static int update_open;
+
+static void draw_update_popup(void)
+{
+    const ctrupdate_popup *p = &update_pop;
+    int w = 240, x = (STAGE_W - w) / 2;
+    int ts[3], tl[3], hs[2], hl[2];
+    int n = text_wrap(FONT_REGULAR, 11, p->text, w - 20, ts, tl, 3);
+    int nh = text_wrap(FONT_REGULAR, 11, p->hint, w - 20, hs, hl, 2);
+    int extra = p->progress >= 0 || p->detail[0] ? 20 : 0;
+    int h = 32 + n * 16 + extra + nh * 16 + 12, y = (192 - h) / 2;
+    gfx_fill_alpha(0, 0, STAGE_W, 192, 0x000000, 110);
+    gfx_frame(x, y, w, h, 5, 0xFBFBFB, settings.color, 2);
+    text_draw_center(FONT_BOLD, 13, x, y + 8, w, 0x202020, p->title);
+    int row = y + 30;
+    for (int i = 0; i < n; i++, row += 16) {
+        int tw = text_width_n(FONT_REGULAR, 11, p->text + ts[i], tl[i]);
+        text_draw_n(FONT_REGULAR, 11, x + (w - tw) / 2, row, 0x404040, p->text + ts[i], tl[i]);
+    }
+    if (p->progress >= 0) {
+        gfx_fill(x + 24, row + 6, w - 48, 8, 0xC8C8C8);
+        gfx_fill(x + 24, row + 6, (w - 48) * p->progress / 100, 8, settings.color);
+    } else if (p->detail[0]) {
+        text_draw_center(FONT_REGULAR, 10, x, row + 2, w, 0x0059F3, p->detail);
+    }
+    row += extra + 6;
+    for (int i = 0; i < nh; i++, row += 16) {
+        int tw = text_width_n(FONT_REGULAR, 11, p->hint + hs[i], hl[i]);
+        text_draw_n(FONT_REGULAR, 11, x + (w - tw) / 2, row, 0x606060, p->hint + hs[i], hl[i]);
+    }
+}
+
 static void draw_loading(void)
 {
     gfx_target(SCREEN_TOP);
@@ -787,6 +824,7 @@ static void draw(void)
     case SCR_CLOSED: draw_closed(); break;
     default: break;
     }
+    if (update_open) draw_update_popup();
     stage_end();
 
     /* the margins only change with the layout */
@@ -890,7 +928,18 @@ void app_run(void)
             if (assets_progress() < 0 && (in.down & BTN_A)) frame = 0;
             if (in.down & BTN_START) break;
         } else {
-            handle_input(&in);
+            /* The update popup takes the controls while it is up, and on the frame it closes. */
+            int was_open = update_open;
+            int ust = CTRUPDATE_Popup(in.down, &update_pop);
+#ifdef AUTOTEST
+            static int last_ust = -1, last_ist = -1;
+            if (ust != last_ust || (int)CTRUPDATE_InstallState() != last_ist)
+                TLOG("update popup %d install %d %s", last_ust = ust, last_ist = CTRUPDATE_InstallState(),
+                     CTRUPDATE_InstallError());
+#endif
+            if (ust == CTRUPDATE_POPUP_EXIT) break;
+            update_open = ust == CTRUPDATE_POPUP_OPEN;
+            if (!update_open && !was_open) handle_input(&in);
         }
         update();
         draw();
