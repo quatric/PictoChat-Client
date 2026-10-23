@@ -20,9 +20,11 @@ typedef struct {
     int text_x;
     pc_msg msg;
     int h;
+    int web_tab;          /* came from pict.chat: keeps pict.chat's tab */
 } item_t;
 
 static item_t items[MAX_ITEMS];
+static int ds_tab;        /* draw boxes with the DS-sized name tab */
 static int count;
 static int pos;           /* the item the view rests on */
 static float offset;      /* y of the list's top, animated towards target */
@@ -115,6 +117,12 @@ void log_add_message(const pc_msg *msg)
     it->h = msg_height(&it->msg);
 }
 
+void log_add_web_message(const pc_msg *msg)
+{
+    log_add_message(msg);
+    items[count - 1].web_tab = 1;
+}
+
 void log_scroll(int delta)
 {
     if (!count) return;
@@ -161,7 +169,10 @@ void log_draw(void)
                 stage_flip(1);
                 if (it->name[0]) ds_text(BOX_X + it->text_x, y + 4, 0xD3CBC3, it->name);
             } else {
+                int was = ds_tab;
+                if (it->web_tab) ds_tab = 0;
                 msg_draw(&it->msg, BOX_X, y);
+                ds_tab = was;
             }
         }
         y += it->h + GAP;
@@ -235,9 +246,17 @@ static void tab_part(const image_t *im, int sx, int sy, int w, int h, int x, int
     else stage_blit_region(im, sx, sy, w, h, x, y, tint, alpha);
 }
 
+/* Only the DS Room uses the DS-sized tab; PictoChat Online keeps pict.chat's */
+void box_ds_tab(int on) { ds_tab = on; }
+
 void box_blit(const image_t *im, int x, int y, u32 tint, int alpha, int multiply, int edge)
 {
     if (!im) return;
+    if (!ds_tab) {
+        if (multiply) stage_blit_multiply(im, x, y, tint, alpha);
+        else stage_blit(im, x, y, tint, alpha);
+        return;
+    }
     const int E = SRC_TAB_W, B = SRC_TAB_H, W = TAB_W;
     int short_box = im->h < B + 8;
     int H = short_box ? B : TAB_H, rows = short_box ? im->h : B + 1;
@@ -264,7 +283,7 @@ void box_blit(const image_t *im, int x, int y, u32 tint, int alpha, int multiply
 
 void box_name(int x, int y, u32 color, const char *name)
 {
-    gfx_clip(x + 2, y, TAB_W - 3, TAB_H);
+    gfx_clip(x + 2, y, (ds_tab ? TAB_W : SRC_TAB_W) - 3, TAB_H);
     ds_text(x + 6, y + 4, color, name);
     gfx_noclip();
 }

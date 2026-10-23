@@ -120,6 +120,7 @@ static void begin_connect(void)
         return;
     }
     ds_mode = 0;
+    box_ds_tab(0);
     if (net_ok != 0) net_ok = net_start(net_ip, sizeof net_ip);
     if (net_ok != 0) {
         snprintf(status, sizeof status, "The Wii is not connected to the Internet.");
@@ -171,13 +172,77 @@ static void begin_ds_room(void)
     my_color = settings.color;
     status[0] = 0;
     ds_mode = 1;
+    box_ds_tab(1);
     room_shift = room_shift_target = 0;
     sound_play(SND_START_APP);
     enter_lobby();
 }
 
+#ifdef NETTEST
+/* Does the network keep working (over a wired adapter) while the DS Room has
+ * the wireless chip? Logs over the USB Gecko; stops logging if nobody reads. */
+#include <stdarg.h>
+#include <unistd.h>
+#include <ogc/usbgecko.h>
+static int nt_dead;
+static void nlog(const char *fmt, ...)
+{
+    char b[240];
+    if (nt_dead) return;
+    int k = snprintf(b, sizeof b, "%6u ", (unsigned)ticks_to_millisecs(gettime()) % 1000000);
+    va_list ap;
+    va_start(ap, fmt);
+    int n = k + vsnprintf(b + k, sizeof b - k - 2, fmt, ap);
+    va_end(ap);
+    if (n > (int)sizeof b - 3) n = sizeof b - 3;
+    b[n++] = '\n';
+    if (usb_sendbuffer_safe_ex(EXI_CHANNEL_1, b, n, 1000) != n) nt_dead = 1;
+}
+static volatile int nt_ok;
+static lwp_t nt_thread;
+static u8 nt_stack[0x10000] __attribute__((aligned(32)));
+static void *nt_main(void *arg)
+{
+    char ip[32] = "";
+    int r = net_start(ip, sizeof ip);
+    nlog("nettest: net_start %d ip %s", r, ip);
+    for (int i = 0;; i++) {
+        const char *url = i & 1 ? "https://pict.chat/" : "http://www.msftconnecttest.com/connecttest.txt";
+        http_response res;
+        memset(&res, 0, sizeof res);
+        u64 t = gettime();
+        int ret = http_request("GET", url, NULL, NULL, 0, &res, NULL);
+        nlog("nettest: probe %d %s ret %d status %d %u ms %s | ds %d", i, i & 1 ? "https" : "http", ret, res.status,
+             (unsigned)ticks_to_millisecs(gettime() - t), res.error, ds_room_active());
+        if (res.status) nt_ok++;
+        http_response_free(&res);
+        usleep(3000 * 1000);
+    }
+    return arg;
+}
+#endif
+
+#ifdef NETTEST
+/* A DS Room hosted next to pict.chat (needs the Internet on a LAN adapter):
+ * its joins, leaves and pictures show in the pict.chat room, and what is
+ * sent or received there goes on to the DSes */
+static int from_ds;
+static int bridging(void) { return !ds_mode && ds_room_active(); }
+#endif
+
 static int poll_event(chat_event *ev)
 {
+#ifdef NETTEST
+    from_ds = 0;
+    while (bridging() && ds_room_poll(ev)) {
+        nlog("nettest: DS event %d '%s' rows %d", ev->type, ev->type == EV_MESSAGE ? ev->msg.name : ev->name,
+             ev->msg.pixel_rows);
+        if (ev->type == EV_PLAYER_JOINED || ev->type == EV_PLAYER_LEFT || ev->type == EV_MESSAGE) {
+            from_ds = 1;
+            return 1;
+        }
+    }
+#endif
     return ds_mode ? ds_room_poll(ev) : chat_poll(ev);
 }
 
@@ -185,6 +250,9 @@ static void send_message(const pc_msg *m)
 {
     if (ds_mode) ds_room_send(m);
     else chat_send(m);
+#ifdef NETTEST
+    if (bridging()) ds_room_send(m);
+#endif
 }
 
 static void handle_events(void)
@@ -192,11 +260,16 @@ static void handle_events(void)
     chat_event ev;
     while (poll_event(&ev)) {
         TLOG("event %d %s", ev.type, ev.name);
+#ifdef NETTEST
+        nlog("nettest: event %d '%s' rows %d", ev.type, ev.type == EV_MESSAGE ? ev.msg.name : ev.name, ev.msg.pixel_rows);
+#endif
         switch (ev.type) {
         case EV_OPEN:
             chat_verify(my_name, my_color, settings.captcha ? pair_token() : "");
             break;
         case EV_NAME_VERIFIED:
+            /* pict.chat may hand back a longer name; this Wii keeps a DS's 10 */
+            if (strlen(ev.name) > 10) ev.name[10] = 0;
             snprintf(my_name, sizeof my_name, "%s", ev.name);
             my_color = ev.color;
             snprintf(settings.name, sizeof settings.name, "%s", ev.name);
@@ -233,6 +306,11 @@ static void handle_events(void)
             break;
         case EV_MESSAGE:
             if (stage_view() == VIEW_BOTTOM) unread++;
+#ifdef NETTEST
+            if (bridging() && !from_ds) ds_room_send(&ev.msg);
+            if (!ds_mode && !from_ds) log_add_web_message(&ev.msg);
+            else
+#endif
             log_add_message(&ev.msg);
             pc_msg_free(&ev.msg);
             sound_play(SND_RECEIVE);
@@ -1130,9 +1208,38 @@ static void draw(void)
 
 /* ── Main loop ───────────────────────────────────────────────────────────── */
 
+#ifdef NETTEST
+static void nettest_step(void)
+{
+    static int started;
+    if (!started) {
+        started = 1;
+        nlog("nettest: start");
+        LWP_CreateThread(&nt_thread, nt_main, NULL, nt_stack, sizeof nt_stack, 40);
+    }
+    /* Once pict.chat is connected, host DS Room A next to it without leaving
+     * pict.chat. Its events only go to the log, the screen stays on pict.chat. */
+    static int tries;
+    int online = !ds_mode && (screen == SCR_LOBBY || screen == SCR_ROOM);
+    if (online && !ds_room_active() && nt_ok >= 2 && tries < 5 && frame % 300 == 0) {
+        char why[96] = "";
+        tries++;
+        int r = ds_room_start(0, settings.name, swatch_index(settings.color), why, sizeof why);
+        nlog("nettest: DS room A start (try %d, screen %d) -> %d active %d '%s'", tries, screen, r,
+             ds_room_active(), why);
+    }
+    /* While bridged, this Wii and the DSes get the DS-sized name tab, so it
+     * stays off the top of DS pictures; pict.chat's messages keep theirs */
+    box_ds_tab(ds_mode || bridging());
+}
+#endif
+
 static void update(void)
 {
     frame++;
+#ifdef NETTEST
+    nettest_step();
+#endif
     switch (screen) {
     case SCR_LOADING: {
         if (frame == 2) assets_start();

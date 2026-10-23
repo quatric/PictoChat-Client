@@ -51,6 +51,10 @@ DSLOG	?=	0
 ifeq ($(DSLOG),1)
  CFLAGS += -DDSLOG
 endif
+NETTEST	?=	0
+ifeq ($(NETTEST),1)
+ CFLAGS += -DNETTEST
+endif
 AUTOTEST	?=	0
 ifeq ($(AUTOTEST),1)
  CFLAGS += -DAUTOTEST
