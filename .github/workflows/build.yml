@@ -157,6 +157,11 @@ jobs:
           pattern: PictoChat-*
           merge-multiple: true
       # Every push to main refreshes the "latest" release; tags like v1.2.0 also get their own release.
+      # Both get their notes from CHANGELOG.md.
+      - name: Write the release notes
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME}"; else v=latest; fi
+          python3 .github/scripts/release_notes.py "$v" "${GITHUB_SHA}" > notes.md
       - name: Move the latest tag
         if: github.ref == 'refs/heads/main'
         run: |
@@ -171,12 +176,7 @@ jobs:
           prerelease: false
           make_latest: true
           fail_on_unmatched_files: true
-          body: |
-            Latest build of PictoChat from ${{ github.sha }}.
-
-            - **Wii**: extract PictoChat-Wii.zip to the root of your SD card or USB drive and open PictoChat from the Homebrew Channel.
-            - **Wii U**: extract PictoChat-WUP.zip to the root of your SD card and open PictoChat from the Wii U Menu (requires Aroma).
-            - **3DS**: extract PictoChat-3DS.zip to the root of your SD card and open PictoChat from the Homebrew Launcher, or install PictoChat-3DS.cia with FBI.
+          body_path: notes.md
           files: |
             out/PictoChat-Wii.zip
             out/PictoChat.dol
@@ -192,6 +192,7 @@ jobs:
         with:
           make_latest: false
           fail_on_unmatched_files: true
+          body_path: notes.md
           files: |
             out/PictoChat-Wii.zip
             out/PictoChat.dol
