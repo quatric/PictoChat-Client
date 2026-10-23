@@ -217,16 +217,16 @@ void ops_draw(const pc_op *ops, int n, int ox, int oy, int clip_lines)
 }
 
 /* pict.chat's box images carry an 89x19 name tab in their top-left corner;
- * a DS's is fixed at about a quarter of the box wide and 15 rows tall, and
- * the big one covered the top of DS pictures. These piece the images back
- * together with the tab's right edge at TAB_W and its bottom at TAB_H.
+ * a DS's is fixed at about a quarter of the box wide, and the wide one
+ * covered the top of DS pictures. These piece the images back together
+ * with the tab's right edge at TAB_W and its bottom at TAB_H.
  * The tab of a one-line box runs its whole height, so that one only gets
  * narrower. 'edge' is how many rows the bottom corner takes in this layer:
  * 4 with the outline, 3 for the fill, which stops above it. */
 #define SRC_TAB_W 88
 #define SRC_TAB_H 18
 #define TAB_W 58
-#define TAB_H 14
+#define TAB_H 18
 
 static void tab_part(const image_t *im, int sx, int sy, int w, int h, int x, int y, u32 tint, int alpha, int multiply)
 {
@@ -265,7 +265,7 @@ void box_blit(const image_t *im, int x, int y, u32 tint, int alpha, int multiply
 void box_name(int x, int y, u32 color, const char *name)
 {
     gfx_clip(x + 2, y, TAB_W - 3, TAB_H);
-    ds_text(x + 6, y + 2, color, name);
+    ds_text(x + 6, y + 4, color, name);
     gfx_noclip();
 }
 
