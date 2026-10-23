@@ -103,12 +103,14 @@ void pc_msg_free(pc_msg *m)
     for (int i = 0; i < m->ntbs; i++) free(m->tbs[i].text);
     free(m->tbs);
     free(m->ops);
+    free(m->pixels);
     memset(m, 0, sizeof *m);
 }
 
 int pc_msg_valid(const pc_msg *m)
 {
     int text = 0;
+    if (m->pixels) return 1;
     for (int i = 0; i < m->ntbs; i++)
         for (const char *c = m->tbs[i].text; c && *c; c++)
             if (!isspace((unsigned char)*c)) text = 1;

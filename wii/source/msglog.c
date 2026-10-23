@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "msglog.h"
+#include "dsmsg.h"
 #include "assets.h"
 #include "font.h"
 #include "stage.h"
@@ -97,6 +98,9 @@ static void copy_msg(pc_msg *dst, const pc_msg *src)
         dst->tbs[i].text = strdup(src->tbs[i].text ? src->tbs[i].text : "");
     }
     pc_ops_cleanup(dst->ops, &dst->nops);
+    dst->pixels = src->pixels ? malloc(DSMSG_W * src->pixel_rows) : NULL;
+    if (dst->pixels) memcpy(dst->pixels, src->pixels, DSMSG_W * src->pixel_rows);
+    else dst->pixel_rows = 0;
 }
 
 void autotest_log(const char *fmt, ...);
@@ -222,10 +226,31 @@ void msg_draw(const pc_msg *m, int x, int y)
     stage_flip(1);
     ds_text(x + 6, y + 4, dk(m->color), m->name);
 
-    /* contents use pict.chat's stage coordinates, relative to the compose box */
-    int ox = x - BOX_X, oy = y - INPUT_Y;
     gfx_clip(x, y, 234, msg_height(m));
-    ops_draw(m->ops, m->nops, ox, oy, lines);
+    msg_draw_content(m, x - BOX_X, y - INPUT_Y);
+    gfx_noclip();
+}
+
+/* A DS picture: image x is screen x, row 0 is stage row 208 (a pixel under
+ * the compose box's top edge). Drawn as runs of one colour. */
+static void pixels_draw(const pc_msg *m, int ox, int oy)
+{
+    for (int r = 0; r < m->pixel_rows; r++) {
+        const u8 *row = m->pixels + r * DSMSG_W;
+        for (int c = 0; c < DSMSG_W;) {
+            int v = row[c], n = 1;
+            while (c + n < DSMSG_W && row[c + n] == v) n++;
+            if (v) gfx_fill(c + ox, INPUT_Y + 1 + r + oy, n, 1, v == 1 ? 0x000000 : dk(dsmsg_color(v)));
+            c += n;
+        }
+    }
+}
+
+void msg_draw_content(const pc_msg *m, int ox, int oy)
+{
+    /* contents use pict.chat's stage coordinates, relative to the compose box */
+    if (m->pixels) pixels_draw(m, ox, oy);
+    ops_draw(m->ops, m->nops, ox, oy, m->lines);
     for (int i = 0; i < m->ntbs && i < 256; i++) {
         float tx = clampf(m->tbs[i].x, 13, 256), ty = clampf(m->tbs[i].y, 204, 274);
         if (tx <= 110 && ty <= 226) {
@@ -237,5 +262,4 @@ void msg_draw(const pc_msg *m, int x, int y)
         if (len > 1020) len = 1020;
         ds_text_n((int)tx + ox, (int)ty + oy, 0x000000, t, len);
     }
-    gfx_noclip();
 }

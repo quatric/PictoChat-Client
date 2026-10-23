@@ -34,6 +34,8 @@ typedef struct {
     int nops;
     pc_textbox *tbs;
     int ntbs;
+    u8 *pixels;           /* a DS picture instead of strokes (dsmsg.h), 256 x pixel_rows */
+    int pixel_rows;
 } pc_msg;
 
 typedef enum {
