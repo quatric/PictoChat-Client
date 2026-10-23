@@ -41,6 +41,19 @@ typedef struct {
     u8 shift, ctrl;
 } key_event;
 
+/* A pen tablet (USB, or a uDraw on a Wii Remote) works the bottom screen like
+ * a DS touch screen. Its samples come at 100-200 a second, so they are taken
+ * one by one rather than once a frame. */
+typedef struct {
+    float x, y;   /* stage pixels, on the bottom screen */
+    int near;     /* the pen is over the tablet (hovering or touching) */
+    int tip;      /* touching */
+    int eraser;   /* the pen is turned over */
+} pen_sample;
+
+int input_pen(pen_sample *out, int max); /* the samples since the last call */
+int input_tablet_opened(void);           /* a USB tablet was opened this session */
+
 void input_init(void);
 void input_shutdown(void);
 void input_set_canvas(int width, int height);

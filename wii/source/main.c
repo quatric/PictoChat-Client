@@ -33,8 +33,12 @@ int main(int argc, char **argv)
     WIIUPDATE_Cancel();
     WIIUPDATE_Wait(5000);
 
+    int tablet = input_tablet_opened();
     sound_shutdown();
     input_shutdown();
     gfx_shutdown();
+    /* A tablet read stays queued in IOS while the pen is away, and would hold
+     * up the Homebrew Channel's stub as it closes everything: start afresh */
+    if (tablet) IOS_ReloadIOS(IOS_GetVersion());
     return 0;
 }

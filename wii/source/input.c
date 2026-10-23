@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <input_wii.h>
+#include <input_tablet.h>
 #include "input.h"
 
 /* Controllers, keyboard, mouse and the optional Wii U / DualShock 3 backends
@@ -111,6 +112,36 @@ void input_init(void)
     INPUT_KeyboardMapClear();
     INPUT_MouseSetSpeed(2);
     INPUT_SetCursorMode(INPUT_CURSOR_IR | INPUT_CURSOR_MOUSE);
+    /* USB tablets; a uDraw comes through the Wii Remotes by itself. The
+     * mouse keeps working: libwiiinput hides tablets from its driver. */
+    TB_Init();
+}
+
+/* ── Pen tablets ─────────────────────────────────────────────────────────── */
+
+int input_pen(pen_sample *out, int max)
+{
+    tb_sample s;
+    int n = 0;
+    while (n < max && TB_Pop(&s)) {
+        int x, y;
+        /* the whole tablet is the bottom screen, keeping its proportions */
+        TB_ToScreen(&s, 256, 192, &x, &y);
+        out[n].x = x;
+        out[n].y = 192 + y;
+        out[n].near = s.in_range;
+        out[n].tip = s.in_range && (s.buttons & TB_BUTTON_TIP);
+        out[n].eraser = s.eraser;
+        n++;
+    }
+    return n;
+}
+
+int input_tablet_opened(void)
+{
+    tb_stats st;
+    TB_GetStats(&st);
+    return st.opens > 0;
 }
 
 void input_set_canvas(int width, int height)
@@ -120,6 +151,7 @@ void input_set_canvas(int width, int height)
 
 void input_shutdown(void)
 {
+    TB_Shutdown();
     INPUT_Shutdown();
 }
 

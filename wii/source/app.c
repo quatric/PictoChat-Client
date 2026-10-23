@@ -507,10 +507,56 @@ static void handle_keyboard(void)
     }
 }
 
+static int pen_near, pen_touching;   /* a tablet pen over the tablet, touching it */
+
+/* A tablet pen works the bottom screen like a DS stylus. Every sample is a
+ * touch of its own, so fast strokes stay smooth. */
+static void handle_pen(void)
+{
+    pen_sample ps[64];
+    int n;
+    while ((n = input_pen(ps, 64)) > 0) {
+        for (int i = 0; i < n; i++) {
+            const pen_sample *p = &ps[i];
+            pen_near = p->near;
+            if (!p->near) {
+                if (pen_touching) {
+                    pen_touching = touching = 0;
+                    touch(TOUCH_UP, touch_x, touch_y);
+                }
+                continue;
+            }
+            stage_to_canvas(p->x, p->y, &cur_x, &cur_y);
+            cursor_visible = 1;
+            virtual_cursor = 0;
+            if (p->tip && !pen_touching) {
+                if (touching) touch(TOUCH_UP, touch_x, touch_y);
+                if (screen == SCR_ROOM) compose_pen_eraser(p->eraser);
+                pen_touching = touching = 1;
+                touch_x = p->x;
+                touch_y = p->y;
+                touch(TOUCH_DOWN, p->x, p->y);
+            } else if (p->tip) {
+                touch_x = p->x;
+                touch_y = p->y;
+                touch(TOUCH_HELD, p->x, p->y);
+            } else if (pen_touching) {
+                pen_touching = touching = 0;
+                touch(TOUCH_UP, touch_x, touch_y);
+            }
+        }
+    }
+}
+
 static void handle_input(const input_t *in)
 {
-    /* the pointer: Wii Remote or mouse; otherwise the D-Pad steers a cursor */
-    if (in->pointer) {
+    handle_pen();
+
+    /* the pointer: a tablet pen, the Wii Remote or mouse; otherwise the
+     * D-Pad steers a cursor */
+    if (pen_near || pen_touching) {
+        /* handle_pen() placed the cursor */
+    } else if (in->pointer) {
         cur_x = in->px;
         cur_y = in->py;
         cursor_visible = 1;
@@ -545,7 +591,9 @@ static void handle_input(const input_t *in)
 
     float sx, sy;
     stage_from_canvas(cur_x, cur_y, &sx, &sy);
-    if ((in->down & BTN_A) && cursor_visible) {
+    if (pen_touching) {
+        /* the pen's own touch is under way */
+    } else if ((in->down & BTN_A) && cursor_visible) {
         touching = 1;
         touch_x = sx;
         touch_y = sy;

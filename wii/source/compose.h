@@ -21,6 +21,7 @@ void compose_renew(const pc_msg *from);
 void compose_next_keyboard(void);
 void compose_toggle_pen_size(void);
 void compose_toggle_pen_mode(void);
+void compose_pen_eraser(int on);              /* a tablet pen's eraser end */
 /* the last message sent, for the log */
 const pc_msg *compose_last_sent(void);
 

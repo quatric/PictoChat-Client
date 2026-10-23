@@ -43,6 +43,7 @@ static pc_op *ops;
 static int nops, ops_cap;
 static int kb_mode, jp_mode;
 static int big_pen = 1, eraser, rainbow_pen, rainbow_deg;
+static int pen_before_eraser = -1;  /* rainbow_pen, while a tablet pen's eraser end is in use */
 static int drawing, draw_sound_cooldown;
 static float last_x, last_y;
 
@@ -303,6 +304,7 @@ void compose_reset(const char *n, u32 c)
     hit = HIT_NONE;
     dragging = 0;
     drawing = 0;
+    pen_before_eraser = -1;
     compose_clear();
 }
 
@@ -430,6 +432,22 @@ static void eraser_mode(void)
 }
 
 void compose_toggle_pen_size(void) { set_pen_size(!big_pen); }
+
+/* A tablet pen turned over: the eraser while it is, then the pen from before */
+void compose_pen_eraser(int on)
+{
+    if (on && !eraser && pen_before_eraser < 0) {
+        pen_before_eraser = rainbow_pen;
+        eraser = 1;
+        rainbow_pen = 0;
+        push_op(0, 0, OP_ERASER);
+    } else if (!on && pen_before_eraser >= 0) {
+        eraser = 0;
+        rainbow_pen = pen_before_eraser;
+        pen_before_eraser = -1;
+        push_op(0, 0, rainbow_pen ? OP_RAINBOW : OP_PEN);
+    }
+}
 
 void compose_toggle_pen_mode(void)
 {

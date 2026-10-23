@@ -34,6 +34,12 @@ CXXFLAGS	=	$(CFLAGS)
 
 LDFLAGS	=	-g $(MACHDEP) -Wl,-Map,$(notdir $@).map
 
+# libwiiinput's pen tablet driver (USB tablets and the uDraw GameTablet). Its
+# wraps keep wiiuse from taking a uDraw for a Classic Controller and hide
+# tablets from libogc's USB mouse driver, so a mouse works alongside.
+CFLAGS	+=	-DHAVE_TABLET
+LDFLAGS	+=	-Wl,--wrap=classic_ctrl_handshake,--wrap=parse_event,--wrap=USB_GetDeviceList
+
 #---------------------------------------------------------------------------------
 # any extra libraries we wish to link with the project
 #---------------------------------------------------------------------------------

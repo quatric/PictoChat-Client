@@ -35,7 +35,9 @@ The Wii Remote pointer is the stylus: point and hold **A** to draw, or tap keys,
 
 Zooming shows one screen at twice the size, which makes the keyboard much easier to hit. While the bottom screen is zoomed, the HUD counts the messages that came in so you know to look up. Renew (copy the message you're looking at) is the button under Send on the touch screen.
 
-Every controller that GlowWii supports works too: the Classic Controller, GameCube controller, Wii U GamePad and Pro Controller (on Wii U) and DualShock 3. Without a pointer, the D-Pad or stick moves the cursor. A USB mouse moves the pointer too. On a USB keyboard you can type straight into the box: Enter sends (Shift+Enter for a new line), arrows and Page Up/Down work like on pict.chat, Tab changes the keyboard, F1 zooms and Esc leaves the room.
+Every controller that GlowWii supports works too: the Classic Controller, GameCube controller, Wii U GamePad and Pro Controller (on Wii U) and DualShock 3. Without a pointer, the D-Pad or stick moves the cursor. A USB mouse moves the pointer too.
+
+A drawing tablet works the bottom screen like a DS stylus: a USB pen tablet (Wacom Intuos, One and Bamboo, Huion, XP-Pen, Gaomon and others) or a uDraw GameTablet on a Wii Remote. The whole tablet is the touch screen, the pen draws when it touches, and turning a Wacom pen over to its eraser end erases. A USB mouse can stay plugged in alongside the tablet. On a USB keyboard you can type straight into the box: Enter sends (Shift+Enter for a new line), arrows and Page Up/Down work like on pict.chat, Tab changes the keyboard, F1 zooms and Esc leaves the room.
 
 In private rooms (Chat Room E), send `!join` followed by a room code to move to another private room. pict.chat's other commands (`!list`, `!tripcode`, `!block`) work too.
 
