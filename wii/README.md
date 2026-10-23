@@ -35,6 +35,12 @@ Every controller that GlowWii supports works too: the Classic Controller, GameCu
 
 In private rooms (Chat Room E), send `!join` followed by a room code to move to another private room. pict.chat's other commands (`!list`, `!tripcode`, `!block`) work too.
 
+## DS Room
+
+The Wii can also host a PictoChat room for real Nintendo DS and 3DS consoles nearby, with no Internet. On the first screen select **DS Room** (or press **−**), then pick Chat Room A, B, C or D. Open PictoChat on the DS and enter the same room. Everyone in the room sees each other's messages, including the Wii's. What you draw or type on the Wii is sent as a DS picture.
+
+The Wii's wireless chip is in DS mode while you host, so PictoChat Online isn't available until you restart the app.
+
 ## Settings
 
 `apps/PictoChat/settings.txt` remembers your name, colour, Dark Mode (`dark=1`, the same as pict.chat's) and the sound volume (`volume=0`..`100`). To use another PictoChat Online server, for example a self-hosted [ayunpictojava](https://github.com/ayunami2000/ayunpictojava):
@@ -73,6 +79,7 @@ The captcha is relayed by pictocard.net (the `/pictochat` page and `/api/v1/pict
 - PictoChat is a trademark of Nintendo. This app isn't affiliated with Nintendo or with PictoChat Online.
 - Graphics, text, input and networking code from PictoCard for Wii; controller support from GlowWii, using [libwiidrc](https://github.com/FIX94/libwiidrc), [libwupc](https://github.com/FIX94/libwupc) and [libsicksaxis](https://github.com/xerpi/libsicksaxis)
 - [mbedTLS](https://github.com/Mbed-TLS/mbedtls), [cJSON](https://github.com/DaveGamble/cJSON), FreeType, libpng and [QR Code generator](https://www.nayuki.io/page/qr-code-generator-library) by Project Nayuki (MIT)
+- DS Room: the room host follows [PiictoChat](https://github.com/abdelali221/PiictoChat) and uses [libWD](https://github.com/abdelali221/libWD) by Abdelali221 (GPL v3; libWD also builds on work by tueidj)
 - Pictochat font by Kirby3 (CC BY-SA 3.0), see `data/pictochat-license.txt`
 - Wii pointer cursor from [PrimmR's Wii Pointer Cursors](https://primmr.dev/projects/wii-pointer-cursors/)
 
