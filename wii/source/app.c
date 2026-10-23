@@ -11,6 +11,7 @@
 #include "assets.h"
 #include "chat.h"
 #include "compose.h"
+#include "ds_room.h"
 #include "font.h"
 #include "gfx.h"
 #include "input.h"
@@ -62,6 +63,7 @@ static int fade;                          /* 0..255 */
 static int closed_y;
 static screen_t closed_from;
 static int join_wait;                     /* frames since asking to join */
+static int ds_mode;                       /* a local room for DS consoles instead of pict.chat */
 
 /* name entry */
 static char name_edit[16];
@@ -110,6 +112,14 @@ static int in_rect(float x, float y, int rx, int ry, int rw, int rh)
 
 static void begin_connect(void)
 {
+    if (ds_room_used()) {
+        /* WD keeps the WiFi chip until the next boot */
+        snprintf(status, sizeof status, "Please restart PictoChat to go online after a DS room.");
+        sound_play(SND_ERROR);
+        screen = SCR_SETUP;
+        return;
+    }
+    ds_mode = 0;
     if (net_ok != 0) net_ok = net_start(net_ip, sizeof net_ip);
     if (net_ok != 0) {
         snprintf(status, sizeof status, "The Wii is not connected to the Internet.");
@@ -145,10 +155,42 @@ static void enter_lobby(void)
     room_index = -1;
 }
 
+static int swatch_index(u32 color)
+{
+    for (int i = 0; i < 16; i++)
+        if (SWATCHES[i] == color) return i;
+    return 0;
+}
+
+/* The DS room: the lobby lists rooms A to D, and joining one starts hosting it */
+static void begin_ds_room(void)
+{
+    WIIUPDATE_Cancel();
+    chat_disconnect();
+    snprintf(my_name, sizeof my_name, "%s", settings.name);
+    my_color = settings.color;
+    status[0] = 0;
+    ds_mode = 1;
+    room_shift = room_shift_target = 0;
+    sound_play(SND_START_APP);
+    enter_lobby();
+}
+
+static int poll_event(chat_event *ev)
+{
+    return ds_mode ? ds_room_poll(ev) : chat_poll(ev);
+}
+
+static void send_message(const pc_msg *m)
+{
+    if (ds_mode) ds_room_send(m);
+    else chat_send(m);
+}
+
 static void handle_events(void)
 {
     chat_event ev;
-    while (chat_poll(&ev)) {
+    while (poll_event(&ev)) {
         TLOG("event %d %s", ev.type, ev.name);
         switch (ev.type) {
         case EV_OPEN:
@@ -218,7 +260,12 @@ static void handle_events(void)
 
 static void leave_room(void)
 {
-    chat_leave();
+    if (ds_mode) {
+        ds_room_stop();
+        log_add_banner(IMG_LEAVE_A + room_index, my_name, 82);
+    } else {
+        chat_leave();
+    }
     sound_play(SND_LEAVE_ROOM);
     left_room = room_index;
     enter_lobby();
@@ -231,6 +278,9 @@ static void leave_room(void)
 #define SWATCH_Y 262
 #define DARK_Y 298
 #define JOIN_Y 322
+#define JOIN_X 14
+#define DS_X 132
+#define JOIN_W 110
 
 static void toggle_dark(void)
 {
@@ -262,14 +312,16 @@ static void setup_touch(int phase, float x, float y)
         toggle_dark();
         return;
     }
-    if (in_rect(x, y, 64, JOIN_Y, 128, 26)) {
+    int online = in_rect(x, y, JOIN_X, JOIN_Y, JOIN_W, 26), ds = in_rect(x, y, DS_X, JOIN_Y, JOIN_W, 26);
+    if (online || ds) {
         if (!settings.name[0]) {
             sound_play(SND_ERROR);
             snprintf(status, sizeof status, "Choose a name first.");
             return;
         }
         settings_save();
-        begin_connect();
+        if (ds) begin_ds_room();
+        else begin_connect();
     }
 }
 
@@ -342,7 +394,7 @@ static void name_touch(int phase, float x, float y)
 static void lobby_touch(int phase, float x, float y)
 {
     if (phase != TOUCH_UP || fade < 255 || join_wait > 0) return;
-    if (in_rect(x, y, 233, 337, 21, 21)) {
+    if (!ds_mode && in_rect(x, y, 233, 337, 21, 21)) {
         room_shift_target = room_shift_target ? 0 : 32;
         sound_play(SND_SCROLL);
         return;
@@ -351,6 +403,17 @@ static void lobby_touch(int phase, float x, float y)
         int ry = 224 + i * 32 - room_shift;
         if (ry < 224 || ry + 32 > 352) continue;
         if (in_rect(x, y, 31, ry, 192, 32)) {
+            if (ds_mode) {
+                if (i == 4) return;
+                if (ds_room_start(i, my_name, swatch_index(my_color), status, sizeof status) < 0) {
+                    sound_play(SND_ERROR);
+                    screen = SCR_SETUP;
+                    return;
+                }
+                join_wait = 1;
+                sound_play(SND_KEY_UP);
+                return;
+            }
             if (i < 4 && counts[i] >= 16) {
                 sound_play(SND_ERROR);
                 return;
@@ -372,7 +435,7 @@ static void room_touch(int phase, float x, float y)
     case COMPOSE_SCROLL_DOWN: log_scroll(1); break;
     case COMPOSE_SCROLL_END: log_scroll_end(); break;
     case COMPOSE_SENT:
-        chat_send(compose_last_sent());
+        send_message(compose_last_sent());
         log_add_message(compose_last_sent());
         log_scroll_end();
         break;
@@ -383,7 +446,7 @@ static void room_touch(int phase, float x, float y)
 static void send_now(void)
 {
     if (compose_send() == COMPOSE_SENT) {
-        chat_send(compose_last_sent());
+        send_message(compose_last_sent());
         log_add_message(compose_last_sent());
         log_scroll_end();
     }
@@ -439,7 +502,7 @@ static void handle_keyboard(void)
                 sound_play(SND_KEY_UP);
             }
         } else if (screen == SCR_SETUP) {
-            if (k.code == KEY_ENTER || k.code == KEY_KP_ENTER) setup_touch(TOUCH_UP, 70, JOIN_Y + 5);
+            if (k.code == KEY_ENTER || k.code == KEY_KP_ENTER) setup_touch(TOUCH_UP, JOIN_X + 5, JOIN_Y + 5);
         }
     }
 }
@@ -499,7 +562,8 @@ static void handle_input(const input_t *in)
     /* buttons */
     switch (screen) {
     case SCR_SETUP:
-        if (in->down & BTN_PLUS) setup_touch(TOUCH_UP, 70, JOIN_Y + 5);
+        if (in->down & BTN_PLUS) setup_touch(TOUCH_UP, JOIN_X + 5, JOIN_Y + 5);
+        if (in->down & BTN_MINUS) setup_touch(TOUCH_UP, DS_X + 5, JOIN_Y + 5);
         if (in->down & BTN_1) toggle_dark();
         if (in->down & BTN_HOME) quit = 1;
         break;
@@ -522,7 +586,7 @@ static void handle_input(const input_t *in)
             screen = SCR_SETUP;
         }
         if (in->down & BTN_2) cycle_zoom();
-        if (in->pointer && (in->down & (BTN_UP | BTN_DOWN))) {
+        if (!ds_mode && in->pointer && (in->down & (BTN_UP | BTN_DOWN))) {
             room_shift_target = (in->down & BTN_DOWN) ? 32 : 0;
             sound_play(SND_SCROLL);
         }
@@ -593,7 +657,8 @@ static void draw_setup(void)
     gfx_fill(21, DARK_Y + 1, 9, 9, 0xFBFBFB);
     if (settings.dark) gfx_fill(23, DARK_Y + 3, 5, 5, 0x000000);
     ds_text(36, DARK_Y, 0x000000, "Dark Mode");
-    button(64, JOIN_Y, 128, 26, "Join PictoChat", c, touching && in_rect(touch_x, touch_y, 64, JOIN_Y, 128, 26));
+    button(JOIN_X, JOIN_Y, JOIN_W, 26, "Join PictoChat", c, touching && in_rect(touch_x, touch_y, JOIN_X, JOIN_Y, JOIN_W, 26));
+    button(DS_X, JOIN_Y, JOIN_W, 26, "DS Room", c, touching && in_rect(touch_x, touch_y, DS_X, JOIN_Y, JOIN_W, 26));
     if (status[0]) {
         int starts[3], lens[3];
         int n = text_wrap(FONT_DS, 10, status, 230, starts, lens, 3);
@@ -628,10 +693,10 @@ static void draw_lobby(void)
     draw_top_screen();
     stage_blit(img[IMG_BOTTOM_SCREEN], 0, 192, 0xFFFFFF, 255);
     int a = fade;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < (ds_mode ? 4 : 5); i++) {
         int ry = 224 + i * 32 - room_shift;
         stage_blit(img[IMG_ROOM_A + i], 31, ry, 0xFFFFFF, a);
-        if (i < 4) {
+        if (i < 4 && !ds_mode) {
             char n[8];
             snprintf(n, sizeof n, "%d/16", counts[i]);
             ds_text(161, 234 + i * 32 - room_shift, 0x000000, n);
@@ -639,7 +704,7 @@ static void draw_lobby(void)
     }
     stage_blit(img[IMG_CHOOSE], 0, 192, 0xFFFFFF, a);
     stage_blit(img[IMG_CHOOSE_MASK], 0, 192, dk(my_color), a);
-    if (img[IMG_SCROLL]) {
+    if (img[IMG_SCROLL] && !ds_mode) {
         /* the arrow flips once the list has scrolled */
         image_t *s = img[IMG_SCROLL];
         for (int y = 0; y < s->h; y++)
@@ -806,13 +871,13 @@ static const char *const ROOM_HINTS[] = {
 };
 static const char *const LOBBY_HINTS[] = { "A", "Select", "2", "Zoom", "B", "Back", "HOME", "Back" };
 static const char *const MENU_HINTS[] = { "A", "Select", "B", "Back", "HOME", "Quit" };
-static const char *const SETUP_HINTS[] = { "A", "Select", "+", "Join", "1", "Dark Mode", "HOME", "Quit" };
+static const char *const SETUP_HINTS[] = { "A", "Select", "+", "Join", "-", "DS Room", "1", "Dark Mode", "HOME", "Quit" };
 
 static const char *const *hints_for_screen(int *count)
 {
     if (screen == SCR_ROOM) { *count = 16; return ROOM_HINTS; }
     if (screen == SCR_LOBBY) { *count = 8; return LOBBY_HINTS; }
-    if (screen == SCR_SETUP) { *count = 8; return SETUP_HINTS; }
+    if (screen == SCR_SETUP) { *count = 10; return SETUP_HINTS; }
     *count = 6;
     return MENU_HINTS;
 }
@@ -1113,5 +1178,6 @@ void app_run(void)
     pair_cancel();
     TLOG("quit: chat");
     chat_disconnect();
+    ds_room_stop();
     TLOG("quit: done");
 }

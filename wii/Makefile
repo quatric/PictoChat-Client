@@ -41,6 +41,10 @@ LIBS	:=	-lmbedtls -lasnd -lfreetype -lpng16 -lturbojpeg -lwebp -lsharpyuv -lbrot
 		-lfat -lwiikeyboard -lwiiuse -lbte -logc -lm
 LIBS	:=	-lwiiupdate $(LIBS)
 
+DSLOG	?=	0
+ifeq ($(DSLOG),1)
+ CFLAGS += -DDSLOG
+endif
 AUTOTEST	?=	0
 ifeq ($(AUTOTEST),1)
  CFLAGS += -DAUTOTEST
