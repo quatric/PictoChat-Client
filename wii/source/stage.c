@@ -191,16 +191,21 @@ void stage_blit(const image_t *img, int x, int y, u32 tint, int alpha)
 
 void stage_blit_multiply(const image_t *img, int x, int y, u32 tint, int alpha)
 {
+    if (img) stage_blit_multiply_region(img, 0, 0, img->w, img->h, x, y, tint, alpha);
+}
+
+void stage_blit_multiply_region(const image_t *img, int sx, int sy, int w, int h, int x, int y, u32 tint, int alpha)
+{
     if (!img || alpha <= 0) return;
-    for (int j = 0; j < img->h; j++) {
-        int yy = y + j;
-        if (yy < 0 || yy >= SH) continue;
-        const u32 *src = img->px + j * img->w;
+    for (int j = 0; j < h; j++) {
+        int yy = y + j, iy = sy + j;
+        if (yy < 0 || yy >= SH || iy < 0 || iy >= img->h) continue;
+        const u32 *src = img->px + iy * img->w;
         u32 *row = canvas + yy * SW;
-        for (int i = 0; i < img->w; i++) {
-            int xx = x + i;
-            if (xx < 0 || xx >= SW) continue;
-            u32 c = src[i];
+        for (int i = 0; i < w; i++) {
+            int xx = x + i, ix = sx + i;
+            if (xx < 0 || xx >= SW || ix < 0 || ix >= img->w) continue;
+            u32 c = src[ix];
             int a = (c >> 24) * alpha / 255;
             if (!a) continue;
             u32 s = tint_px(flip && stage_dark_on ? hue_flip(c) : c, tint), d = row[xx];

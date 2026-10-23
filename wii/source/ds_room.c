@@ -379,11 +379,20 @@ void ds_room_send(const pc_msg *msg)
     static u8 pixels[DSMSG_W * DSMSG_MAX_ROWS];
     static u8 tiles[DSMSG_W * DSMSG_MAX_ROWS / 2];
     if (!active) return;
-    /* A DS draws into the canvas the last picture left behind and only
-     * overwrites the rows it gets, so always send all of it, wiped clean
-     * like a whiteboard: a shorter message would show old drawings below. */
+    /* Rendered onto a blank canvas, then cut below the last row with
+     * anything on it, rounded up to a 16-row line as a DS sends its own */
     memset(pixels, 0, sizeof pixels);
     dsmsg_render(msg, pixels);
-    dsmsg_pixels_to_tiles(pixels, DSMSG_MAX_ROWS, tiles);
-    awc_send_picture(tiles, DSMSG_MAX_ROWS);
+    int rows = DSMSG_MAX_ROWS;
+    while (rows > 0) {
+        const u8 *row = pixels + (rows - 1) * DSMSG_W;
+        int c = 0;
+        while (c < DSMSG_W && !row[c]) c++;
+        if (c < DSMSG_W) break;
+        rows--;
+    }
+    rows = (rows + 15) / 16 * 16;
+    if (rows < 16) rows = 16;
+    dsmsg_pixels_to_tiles(pixels, rows, tiles);
+    awc_send_picture(tiles, rows);
 }

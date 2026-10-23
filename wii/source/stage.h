@@ -28,6 +28,7 @@ void stage_to_canvas(float sx, float sy, int *px, int *py);
 void stage_blit(const image_t *img, int x, int y, u32 tint, int alpha);
 void stage_blit_region(const image_t *img, int sx, int sy, int w, int h, int x, int y, u32 tint, int alpha);
 void stage_blit_multiply(const image_t *img, int x, int y, u32 tint, int alpha);
+void stage_blit_multiply_region(const image_t *img, int sx, int sy, int w, int h, int x, int y, u32 tint, int alpha);
 void stage_line(float x0, float y0, float x1, float y1, int width, u32 color);
 
 /* pict.chat's dark mode: the page is inverted, and sprites it loads with

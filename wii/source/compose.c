@@ -572,17 +572,17 @@ void compose_draw(int alpha)
     if (overlay >= 0) stage_blit(img[overlay], 0, 192, 0xFFFFFF, alpha);
 
     stage_blit(img[IMG_BOX_BG5], 21, 207, 0xFFFFFF, alpha);
-    stage_blit(img[IMG_BOX_OUTLINE5], 21, 207, tint, alpha);
+    box_blit(img[IMG_BOX_OUTLINE5], 21, 207, tint, alpha, 0, 4);
     if (alpha >= 255) {
         gfx_clip(21, 207, 234, 85);
         ops_draw(ops, nops, 0, 0, 5);
         gfx_noclip();
     }
     /* in dark mode pict.chat's lines come out grey: the multiplied sprite loses its tint */
-    stage_blit_multiply(img[IMG_BOX_LINES], 21, 207, stage_dark() ? 0x303030 : brighten(color, 75), alpha);
+    box_blit(img[IMG_BOX_LINES], 21, 207, stage_dark() ? 0x303030 : brighten(color, 75), alpha, 1, 3);
     if (alpha < 255) return;
 
-    ds_text(27, 211, tint, name);
+    box_name(21, 207, tint, name);
     for (int i = 0; i < ntb; i++) ds_text((int)tbs[i].x, (int)tbs[i].y, 0x000000, tbs[i].text);
     if (selected < ntb && (frame / 30) % 2 == 0) {
         tb_t *t = &tbs[selected];
