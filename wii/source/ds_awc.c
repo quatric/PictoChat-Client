@@ -23,6 +23,31 @@
 #include <ogc/lwp_watchdog.h>
 #include "ds_awc.h"
 
+#ifdef DSLOG
+#include <stdarg.h>
+#include <ogc/usbgecko.h>
+static u64 alog_t0;
+static int alog_dead;
+/* Callers hold mtx, and the plain send spins until the Mac reads the Gecko:
+ * with nothing reading, a send froze the whole app. Give up instead. */
+static void alog(const char *fmt, ...)
+{
+    char b[160];
+    if (alog_dead) return;
+    if (!alog_t0) alog_t0 = gettime();
+    int k = snprintf(b, sizeof b, "%6u ", (unsigned)ticks_to_millisecs(gettime() - alog_t0));
+    va_list ap;
+    va_start(ap, fmt);
+    int n = k + vsnprintf(b + k, sizeof b - k - 2, fmt, ap);
+    va_end(ap);
+    if (n > (int)sizeof b - 3) n = sizeof b - 3;
+    b[n++] = '\n';
+    if (usb_sendbuffer_safe_ex(EXI_CHANNEL_1, b, n, 1000) != n) alog_dead = 1;
+}
+#else
+#define alog(...) ((void)0)
+#endif
+
 #define CONNECTION_CMD_SIZE 8
 #define MACLIST_SIZE        ((AWC_MAX_AID + 1) * 6)
 #define BROADCAST_CMD_SIZE  20
@@ -258,6 +283,7 @@ int awc_send_picture(const u8 *tiles, int rows)
     memcpy(m + CHT_PIC_HEADER, tiles, size - CHT_PIC_HEADER);
     own_queue_size[own_wr % OWN_QUEUE] = size;
     own_wr++;
+    alog("own queued %u bytes (forwarding %d aid %u req %u pending %d)", size, forwarding, trans_aid, req_wr - req_rd, own_info_pending);
     LWP_MutexUnlock(mtx);
     return 0;
 }
@@ -273,14 +299,32 @@ static void start_own_message(void)
     recv_offset = 0;   /* no ALLOW resends for our own transfer */
     own_sending = 1;
     own_step = 0;
+    alog("own start %u bytes seq13 %u/%u seq14 %u/%u", own_queue_size[own_rd % OWN_QUEUE],
+         port_seq[13], peer_seq[13], port_seq[14], peer_seq[14]);
 }
 
 static void allow_next_transport(void);
 
+/* Which chunk goes out at a step of a pass: forward, backward, then rotated,
+ * so a chunk's copies don't all land in the same moments of a pass where a
+ * DS keeps missing packets. */
+#ifdef DSLOG
+static u32 own_frames, own_missed;
+#endif
+
+static u32 pass_chunk(u32 step, u32 body)
+{
+    u32 pass = step / body, i = step % body;
+    if (pass & 1) i = body - 1 - i;
+    return (i + (pass / 2) * (body / 3 + 1)) % body;
+}
+
 /* One chunk at a time, paced. The body goes out OWN_PASSES times, each chunk
- * as a new packet (a child just rewrites the same offset), then DATA_END
- * twice: a child shows the message with whatever arrived when DATA_END does,
- * and ignores the second one. */
+ * as a new packet (a child just rewrites the same offset; nothing acks a
+ * parent's chunks, and one that never arrives leaves the last picture's
+ * pixels there), then DATA_END twice. A child finishes a parent's transfer
+ * only on DONE_TRANSPORT, and takes every copy of it as another message, so
+ * that goes out once. */
 static void feed_own_message(void)
 {
     if (!own_sending || queue_wr - queue_rd >= 1 || ms_since(own_last_chunk) < OWN_GAP_MS) return;
@@ -289,7 +333,7 @@ static void feed_own_message(void)
     u32 size = own_queue_size[own_rd % OWN_QUEUE];
     u32 body = (size - 1) / SEND_CHUNK;
     u32 step = own_step++;
-    u32 offset = step < body * OWN_PASSES ? (step % body) * SEND_CHUNK : body * SEND_CHUNK;
+    u32 offset = step < body * OWN_PASSES ? pass_chunk(step, body) * SEND_CHUNK : body * SEND_CHUNK;
     u32 n = size - offset > SEND_CHUNK ? SEND_CHUNK : size - offset;
     int last = offset + n == size;
     u8 pkt[TRANSPORT_CMD_SIZE + SEND_CHUNK] = { 0 };
@@ -300,7 +344,20 @@ static void feed_own_message(void)
     put32(pkt + 8, offset);
     memcpy(pkt + TRANSPORT_CMD_SIZE, m + offset, n);
     enqueue_n(AWC_PORT_TRANSPORT, pkt, TRANSPORT_CMD_SIZE + n, last ? PKT_REPEAT : 2);
+    if (last) alog("own DATA_END step %u seq14 %u", step, port_seq[14]);
     if (step == body * OWN_PASSES + 1) {
+        u8 done[BROADCAST_CMD_SIZE] = { 0 };
+        put16(done, CMD_DONE_TRANSPORT);
+        put16(done + 2, BROADCAST_CMD_SIZE);
+        put16(done + 6, 0xFFFF);
+        put32(done + 8, size);
+        done[12] = 1;
+        put32(done + 16, next_rnd());
+        enqueue_n(AWC_PORT_NEGOTIATION, done, BROADCAST_CMD_SIZE, 1);
+#ifdef DSLOG
+        alog("own done: %u reply frames, %u with a child missing", own_frames, own_missed);
+        own_frames = own_missed = 0;
+#endif
         own_sending = 0;
         own_rd++;
         forwarding = 0;
@@ -326,6 +383,7 @@ static void allow_next_transport(void)
         last_relay_len = 0;
         put16(cmd, CMD_ALLOW_TRANSPORT);
         enqueue(AWC_PORT_NEGOTIATION, cmd, BROADCAST_CMD_SIZE);
+        alog("tx ALLOW aid %u size %u", aid, trans_size);
         memcpy(allow_cmd, cmd, BROADCAST_CMD_SIZE);
         if (trans_size == CHT_USERINFO_SIZE) memcpy(login_allow, cmd, BROADCAST_CMD_SIZE);
         allow_tries = 0;
@@ -339,6 +397,7 @@ static void allow_next_transport(void)
 static void drop_grant(int requeue)
 {
     u16 aid = trans_aid;
+    alog("drop grant aid %u requeue %d", aid, requeue);
     forwarding = 0;
     trans_aid = 0xFFFF;
     recv_offset = -1;
@@ -360,6 +419,7 @@ static void on_session(const u8 *data)
 static void on_negotiation(u16 aid, const u8 *data, u32 len)
 {
     if (len < BROADCAST_CMD_SIZE) return;
+    alog("rx neg aid %u cmd %u size %u valid %u (forwarding %d aid %u)", aid, get16(data), get32(data + 8), data[12], forwarding, trans_aid);
     switch (get16(data)) {
     case CMD_GET_TRANSPORT:
         if (req_wr - req_rd >= REQ_FIFO_LEN) break;
@@ -400,6 +460,7 @@ static void on_transport(u16 aid, const u8 *data, u32 len)
     u32 offset = get32(data + 8);
     if ((s32)offset == recv_offset) return;
     recv_offset = offset;
+    if (offset == 0 || state) alog("rx data aid %u off %u n %u state %u", aid, offset, chunk, state);
     last_data_time = gettime();
     grant_retries[aid] = 0;
     if (offset + chunk <= MSG_MAX && (u32)(TRANSPORT_CMD_SIZE + chunk) <= len)
@@ -482,6 +543,7 @@ static void on_child_record(const u8 *frame, s32 len)
             return;
         }
         last_rx_seq[aid][port] = seq;
+        if (port == AWC_PORT_NEGOTIATION) alog("rx port13 aid %u seq %04x", aid, seq);
         if ((u16)((seq & 0x7FFF) - peer_seq[port]) < 0x4000) peer_seq[port] = seq & 0x7FFF;
     }
     switch (port) {
@@ -498,6 +560,12 @@ static void on_child_record(const u8 *frame, s32 len)
 void awc_on_frame(const u8 *frame, s32 len)
 {
     if (len < 0x14) return;
+#ifdef DSLOG
+    if (own_sending) {
+        own_frames++;
+        if (((frame[0] << 8) | frame[1]) & child_bitmap) own_missed++;
+    }
+#endif
     u16 count = (frame[4] << 8) | frame[5];
     u16 stride = (frame[6] << 8) | frame[7];
     if (count <= 1 || stride < 0xA) {

@@ -275,7 +275,12 @@ int ds_room_start(int room, const char *name, int color_index, char *why, int wh
         IOS_Ioctl(kd, 1, NULL, 0, &out, 4);
         IOS_Close(kd);
     }
+    /* the network (a cancelled update check, say) can hold the chip for a moment */
     lock_id = NCD_LockWirelessDriver();
+    for (int i = 0; i < 50 && lock_id < 0; i++) {
+        usleep(100 * 1000);
+        lock_id = NCD_LockWirelessDriver();
+    }
     if (lock_id < 0) {
         snprintf(why, why_len, "The Wii's wireless chip is busy (%d).", (int)lock_id);
         return -1;
@@ -374,7 +379,11 @@ void ds_room_send(const pc_msg *msg)
     static u8 pixels[DSMSG_W * DSMSG_MAX_ROWS];
     static u8 tiles[DSMSG_W * DSMSG_MAX_ROWS / 2];
     if (!active) return;
-    int rows = dsmsg_render(msg, pixels);
-    dsmsg_pixels_to_tiles(pixels, rows, tiles);
-    awc_send_picture(tiles, rows);
+    /* A DS draws into the canvas the last picture left behind and only
+     * overwrites the rows it gets, so always send all of it, wiped clean
+     * like a whiteboard: a shorter message would show old drawings below. */
+    memset(pixels, 0, sizeof pixels);
+    dsmsg_render(msg, pixels);
+    dsmsg_pixels_to_tiles(pixels, DSMSG_MAX_ROWS, tiles);
+    awc_send_picture(tiles, DSMSG_MAX_ROWS);
 }
