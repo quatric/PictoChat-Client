@@ -54,8 +54,10 @@ static void alog(const char *fmt, ...)
 #define TRANSPORT_CMD_SIZE  12
 
 #define PKT_MAX             0xC0   /* parent MP payload size advertised in the beacon */
-#define PKT_REPEAT          3      /* copies of each port packet, same seq */
-#define RELAY_REPEAT        1      /* copies of a relayed body chunk: the sender repeats it if it misses one */
+/* A packet goes out again (same seq, retry bit) until every polled child
+ * answers a frame carrying it, like WM's own MP retransmission; a DS drops
+ * the copies it already has. This many frames at most, then we move on. */
+#define PKT_TRIES           25
 #define QUEUE_LEN           64
 #define REQ_FIFO_LEN        16
 #define KEEPALIVE_MS        50
@@ -72,8 +74,6 @@ static void alog(const char *fmt, ...)
 #define GRANT_RETRIES       3
 
 #define SEND_CHUNK          160    /* AWC_BROADCAST_SEND_SIZE */
-#define OWN_PASSES          4      /* nothing acks a parent's chunks: send the body several times */
-#define OWN_GAP_MS          10     /* a DS Lite loses chunks sent back to back */
 #define OWN_QUEUE           4      /* own messages waiting */
 
 enum { CMD_GET_TRANSPORT, CMD_ALLOW_TRANSPORT, CMD_SET_DATA, CMD_DONE_TRANSPORT, CMD_INFO, CMD_KEEP_ALIVE, CMD_MACADDRLIST };
@@ -83,7 +83,7 @@ typedef struct {
     u8 len;
     u16 bitmap;
     u16 seq;
-    u8 repeat;
+    u8 tries;
     u8 data[PKT_MAX];
 } port_packet;
 
@@ -97,7 +97,10 @@ static u8 child_count;
 static port_packet queue[QUEUE_LEN];
 static u32 queue_rd, queue_wr;
 static port_packet current;
-static int current_left;
+static int current_active;
+static u32 current_sends;
+static u16 current_polled;               /* children the last frame carrying it went to */
+static int current_acked;                /* a reply set to it had every one of them */
 static u16 port_seq[16];
 static u16 peer_seq[16];                 /* highest seq a child used on each port */
 static u32 last_rx_seq[AWC_MAX_AID + 1][16];
@@ -139,7 +142,6 @@ static u32 own_queue_size[OWN_QUEUE];
 static u32 own_rd, own_wr;
 static int own_sending;
 static u32 own_step;
-static u64 own_last_chunk;
 
 static inline void put16(u8 *p, u16 v) { p[0] = v; p[1] = v >> 8; }
 static inline void put32(u8 *p, u32 v) { p[0] = v; p[1] = v >> 8; p[2] = v >> 16; p[3] = v >> 24; }
@@ -167,14 +169,14 @@ static void set_mac(u16 aid, const u8 *mac)
 
 /* ── Packet queue ────────────────────────────────────────────────────────── */
 
-static void enqueue_n(u8 port, const u8 *data, u32 len, u8 repeat)
+static void enqueue(u8 port, const u8 *data, u32 len)
 {
     if (len > PKT_MAX || queue_wr - queue_rd >= QUEUE_LEN) return;
     port_packet *p = &queue[queue_wr % QUEUE_LEN];
     p->port = port;
     p->len = len;
     p->bitmap = 0xFFFF;
-    p->repeat = repeat;
+    p->tries = PKT_TRIES;
     /* A DS keeps one counter per port for both directions and drops anything
      * that doesn't move past what it last saw, so move past the children too. */
     u16 *seq = &port_seq[port & 0xF];
@@ -182,11 +184,6 @@ static void enqueue_n(u8 port, const u8 *data, u32 len, u8 repeat)
     p->seq = ++*seq & 0x7FFF;
     memcpy(p->data, data, len);
     queue_wr++;
-}
-
-static void enqueue(u8 port, const u8 *data, u32 len)
-{
-    enqueue_n(port, data, len, PKT_REPEAT);
 }
 
 /* CMD_INFO also serves as the keepalive: a DS only becomes a member once one
@@ -288,12 +285,15 @@ int awc_send_picture(const u8 *tiles, int rows)
     return 0;
 }
 
+/* Like a DS host's own transfer (pictosrc AWC_SendAllowTransportCmd and
+ * AWC_SendSplitData): one ALLOW for aid 0, then each chunk once, in order,
+ * the last marked DATA_END, on which a child shows it. No DONE: a child
+ * shows its receive buffer again on every DONE, at whatever size the last
+ * ALLOW set. And no USERINFO first: a DS answers it with its own, and that
+ * transfer changes the size in between. */
 static void start_own_message(void)
 {
-    /* a child drops pictures from senders it doesn't list as members */
-    send_own_userinfo();
     announce_own(own_queue_size[own_rd % OWN_QUEUE]);
-    announce_own(own_queue_size[own_rd % OWN_QUEUE]); /* a child that misses it drops the whole message */
     forwarding = 1;
     trans_aid = 0;
     recv_offset = 0;   /* no ALLOW resends for our own transfer */
@@ -305,35 +305,14 @@ static void start_own_message(void)
 
 static void allow_next_transport(void);
 
-/* Which chunk goes out at a step of a pass: forward, backward, then rotated,
- * so a chunk's copies don't all land in the same moments of a pass where a
- * DS keeps missing packets. */
-#ifdef DSLOG
-static u32 own_frames, own_missed;
-#endif
-
-static u32 pass_chunk(u32 step, u32 body)
-{
-    u32 pass = step / body, i = step % body;
-    if (pass & 1) i = body - 1 - i;
-    return (i + (pass / 2) * (body / 3 + 1)) % body;
-}
-
-/* One chunk at a time, paced. The body goes out OWN_PASSES times, each chunk
- * as a new packet (a child just rewrites the same offset; nothing acks a
- * parent's chunks, and one that never arrives leaves the last picture's
- * pixels there), then DATA_END twice. A child finishes a parent's transfer
- * only on DONE_TRANSPORT, and takes every copy of it as another message, so
- * that goes out once. */
+/* One chunk at a time: the next only once the last has gone out, so each is
+ * through (or given up on) before the next, as a child expects them. */
 static void feed_own_message(void)
 {
-    if (!own_sending || queue_wr - queue_rd >= 1 || ms_since(own_last_chunk) < OWN_GAP_MS) return;
-    own_last_chunk = gettime();
+    if (!own_sending || queue_wr != queue_rd || current_active) return;
     const u8 *m = own_queue[own_rd % OWN_QUEUE];
     u32 size = own_queue_size[own_rd % OWN_QUEUE];
-    u32 body = (size - 1) / SEND_CHUNK;
-    u32 step = own_step++;
-    u32 offset = step < body * OWN_PASSES ? pass_chunk(step, body) * SEND_CHUNK : body * SEND_CHUNK;
+    u32 offset = own_step++ * SEND_CHUNK;
     u32 n = size - offset > SEND_CHUNK ? SEND_CHUNK : size - offset;
     int last = offset + n == size;
     u8 pkt[TRANSPORT_CMD_SIZE + SEND_CHUNK] = { 0 };
@@ -343,21 +322,9 @@ static void feed_own_message(void)
     pkt[7] = last;
     put32(pkt + 8, offset);
     memcpy(pkt + TRANSPORT_CMD_SIZE, m + offset, n);
-    enqueue_n(AWC_PORT_TRANSPORT, pkt, TRANSPORT_CMD_SIZE + n, last ? PKT_REPEAT : 2);
-    if (last) alog("own DATA_END step %u seq14 %u", step, port_seq[14]);
-    if (step == body * OWN_PASSES + 1) {
-        u8 done[BROADCAST_CMD_SIZE] = { 0 };
-        put16(done, CMD_DONE_TRANSPORT);
-        put16(done + 2, BROADCAST_CMD_SIZE);
-        put16(done + 6, 0xFFFF);
-        put32(done + 8, size);
-        done[12] = 1;
-        put32(done + 16, next_rnd());
-        enqueue_n(AWC_PORT_NEGOTIATION, done, BROADCAST_CMD_SIZE, 1);
-#ifdef DSLOG
-        alog("own done: %u reply frames, %u with a child missing", own_frames, own_missed);
-        own_frames = own_missed = 0;
-#endif
+    enqueue(AWC_PORT_TRANSPORT, pkt, TRANSPORT_CMD_SIZE + n);
+    if (last) {
+        alog("own DATA_END after %u chunks seq14 %u", own_step, port_seq[14]);
         own_sending = 0;
         own_rd++;
         forwarding = 0;
@@ -448,11 +415,6 @@ static void on_negotiation(u16 aid, const u8 *data, u32 len)
     }
 }
 
-static void enqueue_relay(const u8 *data, u32 len, u8 repeat)
-{
-    enqueue_n(AWC_PORT_TRANSPORT, data, len, repeat);
-}
-
 static void on_transport(u16 aid, const u8 *data, u32 len)
 {
     if (len < TRANSPORT_CMD_SIZE || !forwarding || aid != trans_aid) return;
@@ -465,10 +427,12 @@ static void on_transport(u16 aid, const u8 *data, u32 len)
     grant_retries[aid] = 0;
     if (offset + chunk <= MSG_MAX && (u32)(TRANSPORT_CMD_SIZE + chunk) <= len)
         memcpy(msgbuf + offset, data + TRANSPORT_CMD_SIZE, chunk);
-    /* re-broadcast the chunk untouched: the sender waits for its own DATA_END */
+    /* re-broadcast the chunk untouched: the sender waits for its own DATA_END,
+     * and keeps whatever it last had at an offset whose echo never arrives
+     * (a lost echo of the header showed its drawing under our name) */
     u32 n = TRANSPORT_CMD_SIZE + chunk;
     if (n > PKT_MAX) return;
-    enqueue_relay(data, n, state ? PKT_REPEAT : RELAY_REPEAT);
+    enqueue(AWC_PORT_TRANSPORT, data, n);
     memcpy(last_relay, data, n);
     last_relay_len = n;
     last_relay_time = gettime();
@@ -536,7 +500,7 @@ static void on_child_record(const u8 *frame, s32 len)
             if (port == AWC_PORT_TRANSPORT && forwarding && trans_aid == aid && last_relay_len &&
                 dlen >= TRANSPORT_CMD_SIZE && get32(data + 8) == get32(last_relay + 8) &&
                 ms_since(last_relay_time) >= 10) {
-                enqueue_relay(last_relay, last_relay_len, RELAY_REPEAT);
+                enqueue(AWC_PORT_TRANSPORT, last_relay, last_relay_len);
                 last_relay_time = gettime();
             }
             LWP_MutexUnlock(mtx);
@@ -556,16 +520,18 @@ static void on_child_record(const u8 *frame, s32 len)
 
 /* WD hands over all replies to one MP frame together: a 10-byte header (bitmap
  * of children that didn't answer, timestamp, record count, record stride =
- * reply slot + 10, ?) and then one fixed-size record per child. */
+ * reply slot + 10, ?) and then one fixed-size record per child. A child only
+ * answers a frame it got, so one with nobody missing delivered the packet
+ * the frame carried. The replies come well before the next frame (sent every
+ * 4 ms), so they belong to the last one sent. */
 void awc_on_frame(const u8 *frame, s32 len)
 {
+    if (len < 0xA) return;
+    u16 missing = (frame[0] << 8) | frame[1];
+    LWP_MutexLock(mtx);
+    if (current_active && current_sends && !(missing & current_polled)) current_acked = 1;
+    LWP_MutexUnlock(mtx);
     if (len < 0x14) return;
-#ifdef DSLOG
-    if (own_sending) {
-        own_frames++;
-        if (((frame[0] << 8) | frame[1]) & child_bitmap) own_missed++;
-    }
-#endif
     u16 count = (frame[4] << 8) | frame[5];
     u16 stride = (frame[6] << 8) | frame[7];
     if (count <= 1 || stride < 0xA) {
@@ -623,7 +589,12 @@ u32 awc_next_frame(u8 *buf, u16 *pollbitmap)
     if (!own_sending && own_rd != own_wr && !forwarding && req_rd == req_wr && !own_info_pending) start_own_message();
     feed_own_message();
 
-    if (!current_left) {
+    if (current_active && (current_acked || current_sends >= current.tries)) {
+        if (!current_acked) alog("gave up port %u seq %u after %u sends", current.port, current.seq, current_sends);
+        current_active = 0;
+        feed_own_message();
+    }
+    if (!current_active) {
         if (queue_rd == queue_wr && ms_since(last_keepalive) >= KEEPALIVE_MS) {
             send_connection_cmd(CMD_INFO);
             last_keepalive = gettime();
@@ -631,15 +602,16 @@ u32 awc_next_frame(u8 *buf, u16 *pollbitmap)
         if (queue_rd != queue_wr) {
             current = queue[queue_rd % QUEUE_LEN];
             queue_rd++;
-            current_left = current.repeat;
+            current_active = 1;
+            current_sends = 0;
+            current_acked = 0;
         }
     }
 
     u32 len;
-    if (current_left) {
-        int retry = current_left < current.repeat;
-        current_left--;
-        len = build_port_frame(buf, &current, current.bitmap & bitmap, retry);
+    if (current_active) {
+        current_polled = current.bitmap & bitmap;
+        len = build_port_frame(buf, &current, current_polled, current_sends++ > 0);
     } else {
         /* nothing to say, just poll the children so they can talk */
         memset(buf, 0, 4);
@@ -660,7 +632,8 @@ void awc_init(const u8 *own_mac, const awc_callbacks *cb)
     child_bitmap = 0;
     child_count = 0;
     queue_rd = queue_wr = 0;
-    current_left = 0;
+    current_active = 0;
+    current_acked = 0;
     memset(last_rx_seq, 0xFF, sizeof last_rx_seq);
     memset(peer_seq, 0, sizeof peer_seq);
     memset(login_allow, 0, sizeof login_allow);
