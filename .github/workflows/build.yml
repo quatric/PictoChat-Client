@@ -92,7 +92,7 @@ jobs:
       - name: Install host tools and portlibs
         run: |
           apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates curl bzip2 zip
-          pkgs="switch-freetype switch-libpng switch-libjpeg-turbo switch-libwebp switch-zlib switch-bzip2 switch-sdl2"
+          pkgs="switch-freetype switch-harfbuzz switch-libpng switch-libjpeg-turbo switch-libwebp switch-zlib switch-bzip2 switch-sdl2"
           dkp-pacman -Q $pkgs || dkp-pacman -Sy --noconfirm --needed $pkgs
       - name: Build mbedTLS
         run: ./scripts/build_portlibs.sh

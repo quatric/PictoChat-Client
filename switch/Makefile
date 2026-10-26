@@ -49,7 +49,7 @@ ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 # SDL2's own dependencies come after it; libwebp 1.0 (the portlibs one) has no libsharpyuv
-LIBS	:=	-lmbedtls -lSDL2 -lEGL -lGLESv2 -lglapi -ldrm_nouveau -lfreetype -lpng16 -lturbojpeg -lwebp -lbz2 -lz \
+LIBS	:=	-lmbedtls -lSDL2 -lEGL -lGLESv2 -lglapi -ldrm_nouveau -lfreetype -lharfbuzz -lfreetype -lpng16 -lturbojpeg -lwebp -lbz2 -lz \
 		-lnx -lm -lstdc++
 
 AUTOTEST	?=	0
