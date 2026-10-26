@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Switch**
+- New: PictoChat for the Nintendo Switch, for the Homebrew Menu. Touch screen, Joy-Cons and Pro Controller, USB keyboard.
+
 ## 1.3.1 (2026-10-23)
 
 **Names**

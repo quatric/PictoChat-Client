@@ -79,6 +79,38 @@ jobs:
           if-no-files-found: error
           path: out/
 
+  switch:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    defaults:
+      run:
+        working-directory: switch
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - name: Install host tools and portlibs
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends python3 git ca-certificates curl bzip2 zip
+          pkgs="switch-freetype switch-libpng switch-libjpeg-turbo switch-libwebp switch-zlib switch-bzip2 switch-sdl2"
+          dkp-pacman -Q $pkgs || dkp-pacman -Sy --noconfirm --needed $pkgs
+      - name: Build mbedTLS
+        run: ./scripts/build_portlibs.sh
+      - name: Version
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME#v}"; else v="$(cat VERSION)"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Build
+        run: make VERSION=${{ steps.version.outputs.version }} && make dist VERSION=${{ steps.version.outputs.version }}
+      - name: Collect
+        run: mkdir -p ../out && cp dist/PictoChat-Switch.zip PictoChat.nro ../out/
+      - uses: actions/upload-artifact@v5
+        with:
+          name: PictoChat-Switch
+          if-no-files-found: error
+          path: out/
+
   n3ds:
     runs-on: ubuntu-latest
     container: devkitpro/devkitarm:latest
@@ -146,7 +178,7 @@ jobs:
           path: out/
 
   release:
-    needs: [wii, wiiu, n3ds, n3ds-cia]
+    needs: [wii, wiiu, switch, n3ds, n3ds-cia]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
@@ -183,6 +215,8 @@ jobs:
             out/PictoChat-WUP.zip
             out/PictoChat.wuhb
             out/PictoChat.rpx
+            out/PictoChat-Switch.zip
+            out/PictoChat.nro
             out/PictoChat-3DS.zip
             out/PictoChat-3DS.cia
             out/PictoChat.3dsx
@@ -199,6 +233,8 @@ jobs:
             out/PictoChat-WUP.zip
             out/PictoChat.wuhb
             out/PictoChat.rpx
+            out/PictoChat-Switch.zip
+            out/PictoChat.nro
             out/PictoChat-3DS.zip
             out/PictoChat-3DS.cia
             out/PictoChat.3dsx
