@@ -5,26 +5,26 @@
 #include <webp/decode.h>
 #include "image.h"
 
+/* The Switch's libjpeg-turbo is 2.1, which has the TurboJPEG 2 API only */
 static image_t *decode_jpeg(const unsigned char *data, size_t size, int max_side)
 {
-    tjhandle tj = tj3Init(TJINIT_DECOMPRESS);
+    tjhandle tj = tjInitDecompress();
     if (!tj) return NULL;
     image_t *img = NULL;
-    if (tj3DecompressHeader(tj, data, size) == 0) {
-        int w = tj3Get(tj, TJPARAM_JPEGWIDTH), h = tj3Get(tj, TJPARAM_JPEGHEIGHT);
+    int w, h, subsamp, cs;
+    if (tjDecompressHeader3(tj, data, size, &w, &h, &subsamp, &cs) == 0) {
         tjscalingfactor sf = { 1, 1 };
         while (sf.denom < 8 && (w * sf.num / sf.denom > max_side * 2 || h * sf.num / sf.denom > max_side * 2))
             sf.denom *= 2;
-        tj3SetScalingFactor(tj, sf);
         int sw = TJSCALED(w, sf), sh = TJSCALED(h, sf);
         img = image_new(sw, sh);
-        if (img && tj3Decompress8(tj, data, size, (unsigned char *)img->px, sw * 4, TJPF_ARGB) < 0 &&
-            tj3GetErrorCode(tj) == TJERR_FATAL) {
+        if (img && tjDecompress2(tj, data, size, (unsigned char *)img->px, sw, sw * 4, sh, TJPF_ARGB, 0) < 0 &&
+            tjGetErrorCode(tj) == TJERR_FATAL) {
             image_free(img);
             img = NULL;
         }
     }
-    tj3Destroy(tj);
+    tjDestroy(tj);
     return img;
 }
 
@@ -285,23 +285,22 @@ unsigned char *image_encode_jpeg(const image_t *img, int quality, size_t *out_si
         u32 c = img->px[i];
         flat[i] = 0xFF000000 | gfx_mix(0xFFFFFF, c & 0xFFFFFF, c >> 24);
     }
-    tjhandle tj = tj3Init(TJINIT_COMPRESS);
+    tjhandle tj = tjInitCompress();
     unsigned char *jpeg = NULL;
-    size_t size = 0;
+    unsigned long size = 0;
     if (tj) {
-        tj3Set(tj, TJPARAM_QUALITY, quality);
-        tj3Set(tj, TJPARAM_SUBSAMP, TJSAMP_420);
-        if (tj3Compress8(tj, (unsigned char *)flat, img->w, img->w * 4, img->h, TJPF_ARGB, &jpeg, &size) < 0) {
-            tj3Free(jpeg);
+        if (tjCompress2(tj, (unsigned char *)flat, img->w, img->w * 4, img->h, TJPF_ARGB, &jpeg, &size, TJSAMP_420,
+                        quality, 0) < 0) {
+            tjFree(jpeg);
             jpeg = NULL;
         }
-        tj3Destroy(tj);
+        tjDestroy(tj);
     }
     free(flat);
     if (!jpeg) return NULL;
     unsigned char *copy = malloc(size);
     if (copy) memcpy(copy, jpeg, size);
-    tj3Free(jpeg);
+    tjFree(jpeg);
     *out_size = size;
     return copy;
 }

@@ -4,7 +4,7 @@
 #include "sound.h"
 #include "assets.h"
 
-/* pict.chat's sounds are 32 kHz 16-bit stereo, big-endian;
+/* pict.chat's sounds are 32 kHz 16-bit stereo, big-endian, so mix() swaps them;
  * they are mixed here and SDL resamples them for the speakers. */
 #define VOICES 8
 
@@ -29,7 +29,7 @@ static void mix(void *userdata, Uint8 *stream, int len)
         if (!vc->pcm) continue;
         for (int i = 0; i < frames && vc->pos < vc->frames; i++, vc->pos++) {
             for (int ch = 0; ch < 2; ch++) {
-                int s = out[i * 2 + ch] + vc->pcm[vc->pos * 2 + ch] * volume / 255;
+                int s = out[i * 2 + ch] + (s16)__builtin_bswap16((u16)vc->pcm[vc->pos * 2 + ch]) * volume / 255;
                 out[i * 2 + ch] = s > 32767 ? 32767 : s < -32768 ? -32768 : s;
             }
         }
@@ -42,7 +42,7 @@ void sound_init(void)
     SDL_AudioSpec want, have;
     SDL_zero(want);
     want.freq = 32000;
-    want.format = AUDIO_S16MSB;
+    want.format = AUDIO_S16SYS; /* the samples are big-endian: swapped in mix() */
     want.channels = 2;
     want.samples = 1024;
     want.callback = mix;
