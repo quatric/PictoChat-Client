@@ -11,7 +11,7 @@ Homebrew clients for [PictoChat Online](https://pict.chat) by ayunami2000: join 
 | Switch | [`switch/`](switch) | `PictoChat-Switch.zip` or `PictoChat.nro` | Extract to the SD card, open from the Homebrew Menu (hbmenu) |
 | 3DS | [`3ds/`](3ds) | `PictoChat-3DS.zip` or `PictoChat-3DS.cia` | Extract to the SD card for the Homebrew Launcher, or install the CIA with FBI |
 
-Grab the builds from the [latest release](../../releases/latest). Every push to `main` builds all four in one workflow and refreshes it.
+Grab the builds from the [latest release](../../releases/latest). Pushing a version tag builds all four in one workflow and publishes it.
 
 See each folder's README for controls, settings and build instructions. Each client builds on its own with `make` from inside its folder.
 

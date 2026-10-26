@@ -179,7 +179,7 @@ jobs:
 
   release:
     needs: [wii, wiiu, switch, n3ds, n3ds-cia]
-    if: github.event_name == 'push'
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -188,43 +188,15 @@ jobs:
           path: out
           pattern: PictoChat-*
           merge-multiple: true
-      # Every push to main refreshes the "latest" release; tags like v1.2.0 also get their own release.
-      # Both get their notes from CHANGELOG.md.
+      # Tags like v1.2.0 get their own release, with notes from CHANGELOG.md.
+      # GitHub marks the highest version as the Latest release.
       - name: Write the release notes
         run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then v="${GITHUB_REF_NAME}"; else v=latest; fi
-          python3 .github/scripts/release_notes.py "$v" "${GITHUB_SHA}" > notes.md
-      - name: Move the latest tag
-        if: github.ref == 'refs/heads/main'
-        run: |
-          git tag -f latest
-          git push -f origin latest
-      - name: Publish latest release
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: PictoChat (latest)
-          prerelease: false
-          make_latest: true
-          fail_on_unmatched_files: true
-          body_path: notes.md
-          files: |
-            out/PictoChat-Wii.zip
-            out/PictoChat.dol
-            out/PictoChat-WUP.zip
-            out/PictoChat.wuhb
-            out/PictoChat.rpx
-            out/PictoChat-Switch.zip
-            out/PictoChat.nro
-            out/PictoChat-3DS.zip
-            out/PictoChat-3DS.cia
-            out/PictoChat.3dsx
+          python3 .github/scripts/release_notes.py "${GITHUB_REF_NAME}" "${GITHUB_SHA}" > notes.md
       - name: Publish tagged release
-        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          make_latest: false
+          make_latest: true
           fail_on_unmatched_files: true
           body_path: notes.md
           files: |
