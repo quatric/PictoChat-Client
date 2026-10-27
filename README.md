@@ -1,6 +1,6 @@
 # PictoChat Client
 
-**Version:** 1.3.1 · **Coder:** quatric
+**Version:** 1.4.0 · **Coder:** quatric
 
 Homebrew clients for [PictoChat Online](https://pict.chat) by ayunami2000: join the chat rooms, type with the DS keyboards and draw, from a console. They look, sound and behave like pict.chat, and you chat with everyone using the website. All the clients live in this one repository so a change can be made to every console at once.
 

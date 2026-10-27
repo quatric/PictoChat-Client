@@ -32,6 +32,8 @@ def installing(version):
     if v is None or v >= (1, 2, 1):
         lines.append("- **Wii U**: extract PictoChat-WUP.zip to the root of your SD card and open PictoChat from the Wii U Menu (requires Aroma).")
         lines.append("- **3DS**: extract PictoChat-3DS.zip to the root of your SD card and open PictoChat from the Homebrew Launcher, or install PictoChat-3DS.cia with FBI.")
+    if v is None or v >= (1, 4, 0):
+        lines.append("- **Switch**: extract PictoChat-Switch.zip to the root of your SD card and open PictoChat from the Homebrew Menu.")
     # Wii builds update themselves from 1.2.0 on, Wii U and 3DS ones from 1.3.0
     if v is None or v > (1, 3, 0):
         lines.append("\nAlready have PictoChat? Open it and press **A** on the update popup (Wii 1.2.0 or later, Wii U and 3DS 1.3.0 or later). Your saved files are kept.")
