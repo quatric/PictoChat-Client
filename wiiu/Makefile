@@ -48,7 +48,7 @@ CXXFLAGS	:= $(CFLAGS)
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-g $(ARCH) $(RPXSPECS) -Wl,-Map,$(notdir $*.map)
 
-LIBS	:=	-lwiiuupdate -lmbedtls -lSDL2 -lfreetype -lpng16 -lturbojpeg -lwebp -lsharpyuv -lbrotlidec -lbrotlicommon -lbz2 -lz \
+LIBS	:=	-lwiiuupdate -linput-wiiu -lmbedtls -lSDL2 -lfreetype -lpng16 -lturbojpeg -lwebp -lsharpyuv -lbrotlidec -lbrotlicommon -lbz2 -lz \
 		-lwut -lm
 
 AUTOTEST	?=	0
@@ -60,7 +60,7 @@ endif
 # list of directories containing libraries, this must be the top level
 # containing include and lib
 #-------------------------------------------------------------------------------
-LIBDIRS	:= $(TOPDIR)/libwiiuupdate $(TOPDIR)/portlibs/wiiu $(PORTLIBS) $(WUT_ROOT)
+LIBDIRS	:= $(TOPDIR)/libwiiuupdate $(TOPDIR)/libwiiuinput $(TOPDIR)/portlibs/wiiu $(PORTLIBS) $(WUT_ROOT)
 
 #-------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional
@@ -108,10 +108,12 @@ $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
-$(BUILD): libwiiuupdate-lib
-.PHONY: libwiiuupdate-lib
+$(BUILD): libwiiuupdate-lib libwiiuinput-lib
+.PHONY: libwiiuupdate-lib libwiiuinput-lib
 libwiiuupdate-lib:
 	@$(MAKE) --no-print-directory -C $(CURDIR)/libwiiuupdate
+libwiiuinput-lib:
+	@$(MAKE) --no-print-directory -C $(CURDIR)/libwiiuinput
 
 #-------------------------------------------------------------------------------
 clean:

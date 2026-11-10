@@ -10,3 +10,6 @@
 [submodule "3ds/lib3dsupdate"]
 	path = 3ds/lib3dsupdate
 	url = https://github.com/quatric/lib3dsupdate.git
+[submodule "wiiu/libwiiuinput"]
+	path = wiiu/libwiiuinput
+	url = https://github.com/quatric/libwiiuinput.git
