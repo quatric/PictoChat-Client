@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.2 (2026-11-09)
+## 1.4.3 (2026-11-09)
 
 **Wii U**
 - Controllers now go through libwiiuinput: the GamePad, Wii Remotes, Pro and Classic Controllers, the GameCube controller adapter and USB game controllers all work, as do USB mice and keyboards.
