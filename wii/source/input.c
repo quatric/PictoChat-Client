@@ -1,6 +1,8 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <wiiuse/wpad.h>
 #include <input_wii.h>
 #include <input_tablet.h>
 #include "input.h"
@@ -152,6 +154,11 @@ void input_set_canvas(int width, int height)
 void input_shutdown(void)
 {
     TB_Shutdown();
+    /* WPAD_Shutdown frees the Wii Remote state while the Bluetooth stack can
+     * still deliver events for it, which crashes in libogc's __wpad_eventCB.
+     * Disconnect the remotes first and let their events drain. */
+    for (int ch = 0; ch < WPAD_MAX_WIIMOTES; ch++) WPAD_Disconnect(ch);
+    usleep(300000);
     INPUT_Shutdown();
 }
 
