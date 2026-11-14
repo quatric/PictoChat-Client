@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.4 (2026-11-14)
+
+**Wii**
+- Fixed a crash when exiting: the Wii Remotes are now disconnected before the controller library shuts down.
+
 ## 1.4.3 (2026-11-09)
 
 **Wii U**
