@@ -42,6 +42,7 @@ u8 NCDcommonbuff[0x20] __attribute__((aligned(32)));
 
 int NCD_LockWirelessDriver() {
     int NCD = IOS_Open("/dev/net/ncd/manage", 0);
+    if (NCD < 0) return NCD;
     
     memset(NCDcommonbuff, 0, 0x20);
     
@@ -166,12 +167,15 @@ int WD_Scan(ScanParameters *settings, u8* buff, u16 buffsize) {
 int WD_ScanOnce(ScanParameters *settings, u8* buff, u16 buffsize) {
     int lockid = NCD_LockWirelessDriver();
     
-    if(WD_Init(AOSSAPScan) < 0) return WD_UINITIALIZED;
+    if(WD_Init(AOSSAPScan) < 0) {
+        if (lockid >= 0) NCD_UnlockWirelessDriver(lockid);
+        return WD_UINITIALIZED;
+    }
     
     WD_Scan(settings, buff, buffsize);
     
     WD_Deinit();
-    NCD_UnlockWirelessDriver(lockid);
+    if (lockid >= 0) NCD_UnlockWirelessDriver(lockid);
     
     return WD_SUCCESS;
 }

@@ -275,19 +275,17 @@ int ds_room_start(int room, const char *name, int color_index, char *why, int wh
         IOS_Ioctl(kd, 1, NULL, 0, &out, 4);
         IOS_Close(kd);
     }
-    /* the network (a cancelled update check, say) can hold the chip for a moment */
+    /* Try to take the chip from NCD, but don't give up if it won't hand out a
+     * lock (it often doesn't after the first room is closed): WD still works. */
     lock_id = NCD_LockWirelessDriver();
-    for (int i = 0; i < 50 && lock_id < 0; i++) {
+    for (int i = 0; i < 5 && lock_id < 0; i++) {
         usleep(100 * 1000);
         lock_id = NCD_LockWirelessDriver();
     }
-    if (lock_id < 0) {
-        snprintf(why, why_len, "The Wii's wireless chip is busy (%d).", (int)lock_id);
-        return -1;
-    }
     s32 ret = WD_Init(DSCommunications);
     if (ret < 0) {
-        NCD_UnlockWirelessDriver(lock_id);
+        if (lock_id >= 0) NCD_UnlockWirelessDriver(lock_id);
+        lock_id = -1;
         snprintf(why, why_len, "The DS wireless mode didn't start (%d).", (int)ret);
         return -1;
     }
@@ -363,7 +361,7 @@ void ds_room_stop(void)
     /* the receive and notification threads may still sit in an ioctl:
      * closing WD releases them */
     WD_Deinit();
-    NCD_UnlockWirelessDriver(lock_id);
+    if (lock_id >= 0) NCD_UnlockWirelessDriver(lock_id);
     lock_id = -1;
 
     /* whatever the UI didn't take yet */

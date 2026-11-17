@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.5 (2026-11-17)
+
+**Wii**
+- Opening a DS room again after closing one no longer fails with "The Wii's wireless chip is busy": the room starts even when the system won't hand out a wireless lock, and it no longer waits five seconds first.
+- A failed wireless scan no longer leaves the wireless chip locked.
+
 ## 1.4.4 (2026-11-14)
 
 **Wii**
